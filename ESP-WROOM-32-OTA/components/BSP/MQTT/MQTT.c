@@ -351,10 +351,9 @@ static esp_err_t mqtt_service_publish_json(const char *topic, const char *payloa
     return ESP_OK;
 }
 
-static void mqtt_service_add_timed_property(cJSON *params,
-                                            const char *identifier,
-                                            float value,
-                                            uint64_t time_ms)
+static void mqtt_service_add_property(cJSON *params,
+                                      const char *identifier,
+                                      float value)
 {
     cJSON *property = NULL;
 
@@ -370,7 +369,6 @@ static void mqtt_service_add_timed_property(cJSON *params,
     }
 
     cJSON_AddNumberToObject(property, "value", value);
-    cJSON_AddNumberToObject(property, "time", (double)time_ms);
     cJSON_AddItemToObject(params, identifier, property);
 }
 
@@ -381,7 +379,6 @@ static esp_err_t mqtt_service_publish_pending_snapshot(void)
     cJSON *sys = NULL;
     char *json_str = NULL;
     char id_buffer[16];
-    uint64_t now_ms = 0U;
     float min_temp = 0.0f;
     float max_temp = 0.0f;
     float center_temp = 0.0f;
@@ -397,7 +394,6 @@ static esp_err_t mqtt_service_publish_pending_snapshot(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    now_ms = (uint64_t)(esp_timer_get_time() / 1000ULL);
     min_temp = ((float)s_pending_snapshot.min_temp_x10) / 10.0f;
     max_temp = ((float)s_pending_snapshot.max_temp_x10) / 10.0f;
     center_temp = ((float)s_pending_snapshot.center_temp_x10) / 10.0f;
@@ -420,9 +416,9 @@ static esp_err_t mqtt_service_publish_pending_snapshot(void)
     cJSON_AddItemToObject(root, "params", params);
     cJSON_AddStringToObject(root, "method", "thing.event.property.post");
 
-    mqtt_service_add_timed_property(params, ALIYUN_THERMAL_PROP_MIN_TEMP, min_temp, now_ms);
-    mqtt_service_add_timed_property(params, ALIYUN_THERMAL_PROP_MAX_TEMP, max_temp, now_ms);
-    mqtt_service_add_timed_property(params, ALIYUN_THERMAL_PROP_CENTER_TEMP, center_temp, now_ms);
+    mqtt_service_add_property(params, ALIYUN_THERMAL_PROP_MIN_TEMP, min_temp);
+    mqtt_service_add_property(params, ALIYUN_THERMAL_PROP_MAX_TEMP, max_temp);
+    mqtt_service_add_property(params, ALIYUN_THERMAL_PROP_CENTER_TEMP, center_temp);
 
     json_str = cJSON_PrintUnformatted(root);
     if (json_str == NULL)
@@ -749,8 +745,6 @@ void publish_sensor_data(uint16_t ir, uint16_t als, uint16_t ps)
     cJSON *sys = NULL;
     char *json_str = NULL;
     char id_buffer[16];
-    uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000ULL);
-
     if (mqtt_connected == false || client == NULL)
     {
         ESP_LOGW(MQTT_TAG, "publish_sensor_data skipped because MQTT is not connected");
@@ -774,9 +768,9 @@ void publish_sensor_data(uint16_t ir, uint16_t als, uint16_t ps)
     cJSON_AddItemToObject(root, "params", params);
     cJSON_AddStringToObject(root, "method", "thing.event.property.post");
 
-    mqtt_service_add_timed_property(params, "IR", (float)ir, now_ms);
-    mqtt_service_add_timed_property(params, "als", (float)als, now_ms);
-    mqtt_service_add_timed_property(params, "ps", (float)ps, now_ms);
+    mqtt_service_add_property(params, "IR", (float)ir);
+    mqtt_service_add_property(params, "als", (float)als);
+    mqtt_service_add_property(params, "ps", (float)ps);
 
     json_str = cJSON_PrintUnformatted(root);
     if (json_str == NULL)
