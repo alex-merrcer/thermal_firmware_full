@@ -13,6 +13,7 @@
 #define DEVICE_SETTINGS_FLAG_ESP32_REMOTE_KEYS         (1UL << 4)
 #define DEVICE_SETTINGS_FLAG_LOW_POWER_ENABLED         (1UL << 5)
 #define DEVICE_SETTINGS_FLAG_STANDBY_ENABLED           (1UL << 6)
+#define DEVICE_SETTINGS_FLAG_THERMAL_PAUSE_SEND_ESP    (1UL << 7)
 
 #define DEVICE_SETTINGS_BLOB_MAGIC                     0x44535447UL
 #define DEVICE_SETTINGS_BLOB_VERSION_V1                1U
@@ -33,6 +34,7 @@ typedef struct
     uint8_t esp32_remote_keys_enabled;
     uint8_t low_power_enabled;
     uint8_t standby_enabled;
+    uint8_t thermal_pause_send_esp_enabled;
     power_policy_t power_policy;
     uint32_t screen_off_timeout_ms;
     uint32_t rtc_stop_wake_ms;

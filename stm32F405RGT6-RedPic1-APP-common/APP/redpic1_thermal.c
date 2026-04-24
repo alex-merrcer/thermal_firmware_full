@@ -102,10 +102,10 @@
     #define REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE 0U
 #endif
 
-#if (REDPIC1_THERMAL_KEY2_SEND_ESP_ENABLE != 0U)
-    #define REDPIC1_THERMAL_KEY2_SEND_ESP_ACTIVE 1U
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
+    #define REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ACTIVE 1U
 #else
-    #define REDPIC1_THERMAL_KEY2_SEND_ESP_ACTIVE 0U
+    #define REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ACTIVE 0U
 #endif
 
 /**
@@ -236,6 +236,7 @@ static uint8_t  s_runtime_overlay_visible = 1U;                                /
 static char     s_overlay_bar_last_line[64];                                   ///< 上次实际绘制到屏幕的文本缓存
 static char     s_overlay_bar_pending_line[64];                                ///< 待刷新的新文本缓存
 static uint32_t s_overlay_bar_last_refresh_ms = 0U;                            ///< 上次状态栏刷新时间戳
+static uint32_t s_key2_ignore_until_ms = 0U;                                   ///< 进页后短时间忽略 KEY2，避免入页按键尾波
 static uint8_t  s_overlay_bar_last_visible = 0U;                               ///< 上次状态栏是否可见
 static uint8_t  s_overlay_bar_last_line_valid = 0U;                            ///< 上次缓存文本是否有效
 static uint8_t  s_overlay_bar_pending_dirty = 1U;                              ///< 待刷新文本是否变更 (脏标志)
@@ -514,6 +515,18 @@ static uint8_t redpic1_thermal_submit_snapshot_to_esp(void)
     cmd.arg1 = (uint8_t)(((uint16_t)center_temp_x10 >> 8) & 0xFFU);
 
     return app_service_submit_async(&cmd);
+}
+
+static uint8_t redpic1_thermal_pause_send_esp_enabled(void)
+{
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ACTIVE != 0U)
+    device_settings_t settings;
+
+    app_rtos_settings_copy(&settings);
+    return settings.thermal_pause_send_esp_enabled;
+#else
+    return 0U;
+#endif
 }
 
 /* 重置显示温度窗口平滑状态。
@@ -2078,8 +2091,8 @@ uint8_t redpic1_thermal_runtime_overlay_visible(void)
 }
 
 /* 处理热成像页本地按键。
- * KEY1 切色板；KEY2 在宏开启时发送一次温度摘要到 ESP32，否则维持切叠加条；
- * KEY3 切暂停状态并按既有策略补提交流程。 */
+ * KEY1 顺时针切色板；KEY2 切暂停/恢复，且在“暂停发送温度”设置开启时发送一次摘要；
+ * KEY3 逆时针切色板。 */
 void redpic1_thermal_handle_key(uint8_t key_value)
 {
     switch (key_value)
@@ -2095,31 +2108,46 @@ void redpic1_thermal_handle_key(uint8_t key_value)
         break;
 
     case KEY2_PRES:
-#if (REDPIC1_THERMAL_KEY2_SEND_ESP_ACTIVE != 0U)
-        (void)redpic1_thermal_submit_snapshot_to_esp();
-#else
-        s_runtime_overlay_visible = (uint8_t)!s_runtime_overlay_visible;
-        redpic1_thermal_reset_bottom_bar_cache();
-        redpic1_thermal_force_refresh();
-#endif
-        break;
-
-    case KEY3_PRES:
     {
-        uint8_t resume_submit = (s_display_paused != 0U) ? 1U : 0U;
+        uint8_t was_display_paused = s_display_paused;
+
+        if (power_manager_get_tick_ms() < s_key2_ignore_until_ms)
+        {
+            break;
+        }
 
         s_display_paused = (uint8_t)!s_display_paused;
         if (s_display_paused != 0U)
         {
             redpic1_thermal_cancel_pending_present_and_clear_submit();
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ACTIVE != 0U)
+            if (was_display_paused == 0U &&
+                redpic1_thermal_pause_send_esp_enabled() != 0U)
+            {
+                (void)redpic1_thermal_submit_snapshot_to_esp();
+            }
+#endif
         }
         redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PAUSE);
         redpic1_thermal_stage6l3_invalidate_history();
-        if (resume_submit != 0U && s_display_paused == 0U)
+        if (was_display_paused != 0U && s_display_paused == 0U)
         {
             redpic1_thermal_try_submit_latest_ready_after_resume();
         }
     }
+        break;
+
+    case KEY3_PRES:
+        if (s_colorMode == 0U)
+        {
+            s_colorMode = 4U;
+        }
+        else
+        {
+            s_colorMode--;
+        }
+        set_color_mode(s_colorMode);
+        redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PALETTE);
         break;
 
     default:
@@ -2151,6 +2179,7 @@ void redpic1_thermal_resume(void)
 {
     redpic1_thermal_apply_refresh_rate(REDPIC1_THERMAL_ACTIVE_REFRESH_RATE);
     s_runEnabled = 1U;
+    s_key2_ignore_until_ms = power_manager_get_tick_ms() + REDPIC1_THERMAL_KEY2_ENTRY_GUARD_MS;
     s_overlayHold = 0U;
     s_display_paused = 0U;
     redpic1_thermal_reset_bottom_bar_cache();

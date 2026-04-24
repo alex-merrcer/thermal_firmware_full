@@ -264,6 +264,9 @@ static const char * const s_ota_items[] =
 /* 绯荤粺椤甸潰鑿滃崟鏂囨湰銆?*/
 static const char * const s_system_items[] =
 {
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
+    "Pause Send Temp",
+#endif
     "Debug Mode",
     "Debug Page"
 };
@@ -300,7 +303,19 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define HOME_ITEM_COUNT            5U
 #define OTA_ITEM_COUNT             4U
 #define POWER_ITEM_COUNT           4U
-#define SYSTEM_ITEM_MAX_COUNT      2U
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
+    #define SYSTEM_ITEM_THERMAL_PAUSE_SEND 0U
+    #define SYSTEM_ITEM_DEBUG_MODE         1U
+    #define SYSTEM_ITEM_DEBUG_PAGE         2U
+    #define SYSTEM_ITEM_BASE_COUNT         2U
+    #define SYSTEM_ITEM_MAX_COUNT          3U
+#else
+    #define SYSTEM_ITEM_THERMAL_PAUSE_SEND 0xFFU
+    #define SYSTEM_ITEM_DEBUG_MODE         0U
+    #define SYSTEM_ITEM_DEBUG_PAGE         1U
+    #define SYSTEM_ITEM_BASE_COUNT         1U
+    #define SYSTEM_ITEM_MAX_COUNT          2U
+#endif
 #define ENGINEERING_ITEM_COUNT     3U
 
 #define HOME_LIST_START_Y          70U
@@ -516,7 +531,7 @@ static uint8_t system_item_count(void)
     device_settings_t settings;
 
     app_rtos_settings_copy(&settings);
-    return (settings.debug_mode_enabled != 0U) ? SYSTEM_ITEM_MAX_COUNT : 1U;
+    return (settings.debug_mode_enabled != 0U) ? SYSTEM_ITEM_MAX_COUNT : SYSTEM_ITEM_BASE_COUNT;
 }
 
 /* 璁剧疆鍐欏叆鎴愬姛鍚庯紝闇€瑕佸悓姝ユ洿鏂板綋鍓嶈繍琛屾椂鐢垫簮绛栫暐銆?*/
@@ -1819,39 +1834,78 @@ static void power_draw_items(void)
 static void system_draw_item(uint8_t index)
 {
     device_settings_t settings;
+    uint16_t item_y = page_list_item_y(SYSTEM_LIST_START_Y, index);
 
     app_rtos_settings_copy(&settings);
 
-    if (index == 0U)
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
+    if (index == SYSTEM_ITEM_THERMAL_PAUSE_SEND)
     {
-        ui_renderer_draw_toggle_item(SYSTEM_LIST_START_Y,
+        ui_renderer_draw_toggle_item(item_y,
                                      s_system_items[0],
-                                     settings.debug_mode_enabled,
-                                     (s_system_selected == 0U) ? 1U : 0U,
+                                     settings.thermal_pause_send_esp_enabled,
+                                     (s_system_selected == SYSTEM_ITEM_THERMAL_PAUSE_SEND) ? 1U : 0U,
                                      WHITE);
     }
-    else if (index == 1U)
+    else if (index == SYSTEM_ITEM_DEBUG_MODE)
+    {
+        ui_renderer_draw_toggle_item(item_y,
+                                     s_system_items[1],
+                                     settings.debug_mode_enabled,
+                                     (s_system_selected == SYSTEM_ITEM_DEBUG_MODE) ? 1U : 0U,
+                                     WHITE);
+    }
+    else if (index == SYSTEM_ITEM_DEBUG_PAGE)
     {
         if (settings.debug_mode_enabled != 0U)
         {
-            ui_renderer_draw_list_item((uint16_t)(SYSTEM_LIST_START_Y + UI_ROW_HEIGHT),
-                                       s_system_items[1],
-                                       (s_system_selected == 1U) ? 1U : 0U,
+            ui_renderer_draw_list_item(item_y,
+                                       s_system_items[2],
+                                       (s_system_selected == SYSTEM_ITEM_DEBUG_PAGE) ? 1U : 0U,
                                        1U,
                                        WHITE);
         }
         else
         {
-            ui_renderer_clear_row((uint16_t)(SYSTEM_LIST_START_Y + UI_ROW_HEIGHT), WHITE);
+            ui_renderer_clear_row(item_y, WHITE);
         }
     }
+#else
+    if (index == SYSTEM_ITEM_DEBUG_MODE)
+    {
+        ui_renderer_draw_toggle_item(item_y,
+                                     s_system_items[0],
+                                     settings.debug_mode_enabled,
+                                     (s_system_selected == SYSTEM_ITEM_DEBUG_MODE) ? 1U : 0U,
+                                     WHITE);
+    }
+    else if (index == SYSTEM_ITEM_DEBUG_PAGE)
+    {
+        if (settings.debug_mode_enabled != 0U)
+        {
+            ui_renderer_draw_list_item(item_y,
+                                       s_system_items[1],
+                                       (s_system_selected == SYSTEM_ITEM_DEBUG_PAGE) ? 1U : 0U,
+                                       1U,
+                                       WHITE);
+        }
+        else
+        {
+            ui_renderer_clear_row(item_y, WHITE);
+        }
+    }
+#endif
 }
 
 /* 閲嶇粯绯荤粺椤甸潰鍏ㄩ儴鑿滃崟椤广€?*/
 static void system_draw_items(void)
 {
-    system_draw_item(0U);
-    system_draw_item(1U);
+    uint8_t index;
+
+    for (index = 0U; index < SYSTEM_ITEM_MAX_COUNT; ++index)
+    {
+        system_draw_item(index);
+    }
 }
 
 /* 鏍规嵁绱㈠紩缁樺埗宸ョ▼椤甸潰涓殑鍗曚釜鑿滃崟椤广€?*/
@@ -2489,7 +2543,17 @@ static void system_on_key(uint8_t key_value)
     }
     else if (key_value == KEY2_PRES)
     {
-        if (s_system_selected == 0U)
+        if (s_system_selected == SYSTEM_ITEM_THERMAL_PAUSE_SEND)
+        {
+#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
+            updated.thermal_pause_send_esp_enabled = (uint8_t)!updated.thermal_pause_send_esp_enabled;
+            if (page_store_settings(&updated) != 0U)
+            {
+                system_draw_item(SYSTEM_ITEM_THERMAL_PAUSE_SEND);
+            }
+#endif
+        }
+        else if (s_system_selected == SYSTEM_ITEM_DEBUG_MODE)
         {
             if (updated.debug_mode_enabled != 0U)
             {
@@ -2509,7 +2573,10 @@ static void system_on_key(uint8_t key_value)
             updated.debug_mode_enabled = (uint8_t)!updated.debug_mode_enabled;
             if (page_store_settings(&updated) != 0U)
             {
-                s_system_selected = 0U;
+                if (s_system_selected >= system_item_count())
+                {
+                    s_system_selected = system_item_count() - 1U;
+                }
                 system_draw_items();
             }
         }
