@@ -117,7 +117,7 @@ void weather_parse(const char *response) {
 
 
 #define DEEPSEEK_URL "https://api.deepseek.com/v1/chat/completions"
-#define API_KEY "sk-e201d85e43864ec0ab72d0dcd43d9d11"  // 替换为实际密钥
+#define API_KEY "sk-e201d312132123312341231"  // 替换为实际密钥
 
 // 流式响应处理缓冲区
 static char *stream_buffer = NULL;
