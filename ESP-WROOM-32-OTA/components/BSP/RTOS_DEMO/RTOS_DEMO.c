@@ -28,7 +28,6 @@ void uart2_send_task(void *pvParameter) {
 
     while (1) {
 			i++;
-			if(i>255) i=0;
 			frame_data[2] = i;
 			frame_data[3] = i+1;
 			frame_data[4] = i+2;

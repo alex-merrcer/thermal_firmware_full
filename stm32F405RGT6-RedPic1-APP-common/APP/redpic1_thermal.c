@@ -9,6 +9,7 @@
 
 #include "app_display_runtime.h"
 #include "app_perf_baseline.h"
+#include "redpic1_app.h"
 #include "delay.h"
 #include "key.h"
 #include "lcd.h"
@@ -95,6 +96,18 @@
     #define REDPIC1_THERMAL_DROP_EXPIRED_FRAME_ACTIVE 0U
 #endif
 
+#if (REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ENABLE != 0U)
+    #define REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE 0U
+#endif
+
+#if (REDPIC1_THERMAL_KEY2_SEND_ESP_ENABLE != 0U)
+    #define REDPIC1_THERMAL_KEY2_SEND_ESP_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_KEY2_SEND_ESP_ACTIVE 0U
+#endif
+
 /**
  * @file redpic1_thermal.c
  * @brief 热成像采集、灰度生成与异步显示提交模块。
@@ -136,6 +149,11 @@
 #define REDPIC1_THERMAL_OVERLAY_BAR_TEXT_X             4U           ///< 状态栏文本 X 轴起始位置
 #define REDPIC1_THERMAL_OVERLAY_CROSS_HALF_SIZE        6U           ///< 中心十字准星半宽
 #define REDPIC1_THERMAL_OVERLAY_BAR_REFRESH_MS         250UL        ///< 底部状态栏刷新防抖周期 (ms)
+#define REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_TEXT      (1U << 0)
+#define REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PALETTE   (1U << 1)
+#define REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PAUSE     (1U << 2)
+#define REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE     (1U << 3)
+#define REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE   (1U << 4)
 
 /* 异步槽位管理参数 */
 #define REDPIC1_THERMAL_SLOT_INDEX_NONE                0xFFU        ///< 无效槽位索引标记
@@ -221,6 +239,7 @@ static uint32_t s_overlay_bar_last_refresh_ms = 0U;                            /
 static uint8_t  s_overlay_bar_last_visible = 0U;                               ///< 上次状态栏是否可见
 static uint8_t  s_overlay_bar_last_line_valid = 0U;                            ///< 上次缓存文本是否有效
 static uint8_t  s_overlay_bar_pending_dirty = 1U;                              ///< 待刷新文本是否变更 (脏标志)
+static uint8_t  s_overlay_bar_dirty_reason_mask = REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE; ///< 当前底栏脏原因掩码
 
 /* [滤波与窗口平滑区] 温度数据后处理缓存 */
 static float    s_display_min_temp = 0.0f;                                     ///< 平滑后的显示窗口下限
@@ -400,6 +419,22 @@ static void redpic1_thermal_clear_bottom_bar(void)
     LCD_Fill(0U, clear_top, (uint16_t)(LCD_W - 1U), (uint16_t)(LCD_H - 1U), BLACK);
 }
 
+static void redpic1_thermal_mark_bottom_bar_dirty(uint8_t reason_mask)
+{
+    s_overlay_bar_pending_dirty = 1U;
+#if (REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE != 0U)
+    s_overlay_bar_dirty_reason_mask = (uint8_t)(s_overlay_bar_dirty_reason_mask | reason_mask);
+#else
+    (void)reason_mask;
+#endif
+}
+
+static void redpic1_thermal_clear_bottom_bar_dirty(void)
+{
+    s_overlay_bar_pending_dirty = 0U;
+    s_overlay_bar_dirty_reason_mask = 0U;
+}
+
 /**
  * @brief 重置状态栏缓存状态，强制下次刷新时重绘。
  */
@@ -410,7 +445,9 @@ static void redpic1_thermal_reset_bottom_bar_cache(void)
     s_overlay_bar_last_refresh_ms = 0U;
     s_overlay_bar_last_visible = 0U;
     s_overlay_bar_last_line_valid = 0U;
-    s_overlay_bar_pending_dirty = 1U;
+    s_overlay_bar_dirty_reason_mask = 0U;
+    redpic1_thermal_mark_bottom_bar_dirty((uint8_t)(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE |
+                                                     REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE));
 }
 
 /**
@@ -429,6 +466,54 @@ static float redpic1_thermal_center_temp(const float *frame_data)
     }
 
     return frame_data[(center_row * REDPIC1_THERMAL_SRC_COLS) + center_col];
+}
+
+static int16_t redpic1_thermal_temp_to_x10(float temp)
+{
+    int32_t scaled = 0;
+
+    scaled = (temp >= 0.0f) ?
+             (int32_t)(temp * 10.0f + 0.5f) :
+             (int32_t)(temp * 10.0f - 0.5f);
+
+    if (scaled > 32767)
+    {
+        scaled = 32767;
+    }
+    else if (scaled < -32768)
+    {
+        scaled = -32768;
+    }
+
+    return (int16_t)scaled;
+}
+
+static uint8_t redpic1_thermal_submit_snapshot_to_esp(void)
+{
+    app_perf_baseline_snapshot_t snapshot;
+    app_service_cmd_t cmd;
+    int16_t min_temp_x10 = 0;
+    int16_t max_temp_x10 = 0;
+    int16_t center_temp_x10 = 0;
+
+    app_perf_baseline_get_snapshot(&snapshot);
+    if (snapshot.thermal_capture_frames == 0U)
+    {
+        return 0U;
+    }
+
+    min_temp_x10 = redpic1_thermal_temp_to_x10(snapshot.latest_min_temp);
+    max_temp_x10 = redpic1_thermal_temp_to_x10(snapshot.latest_max_temp);
+    center_temp_x10 = redpic1_thermal_temp_to_x10(snapshot.latest_center_temp);
+
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.cmd_id = APP_SERVICE_CMD_SEND_THERMAL_SNAPSHOT;
+    cmd.value = ((uint32_t)(uint16_t)min_temp_x10) |
+                (((uint32_t)(uint16_t)max_temp_x10) << 16);
+    cmd.arg0 = (uint8_t)((uint16_t)center_temp_x10 & 0xFFU);
+    cmd.arg1 = (uint8_t)(((uint16_t)center_temp_x10 >> 8) & 0xFFU);
+
+    return app_service_submit_async(&cmd);
 }
 
 /* 重置显示温度窗口平滑状态。
@@ -1923,6 +2008,7 @@ void redpic1_thermal_step(void)
  * 该接口只重送最近稳定帧，不触发新的热成像采集。 */
 void redpic1_thermal_force_refresh(void)
 {
+    redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE);
 #if REDPIC1_THERMAL_DIAG_MODE == REDPIC1_THERMAL_DIAG_MODE_TEST_PATTERN
     redpic1_thermal_present_diag_pattern();
 #else
@@ -1942,7 +2028,8 @@ void redpic1_thermal_render_runtime_overlay(void)
             redpic1_thermal_clear_bottom_bar();
             s_overlay_bar_last_visible = 0U;
             s_overlay_bar_last_line_valid = 0U;
-            s_overlay_bar_pending_dirty = 1U;
+            redpic1_thermal_mark_bottom_bar_dirty((uint8_t)(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE |
+                                                             REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE));
         }
         return;
     }
@@ -1951,7 +2038,7 @@ void redpic1_thermal_render_runtime_overlay(void)
     if (strcmp(s_overlay_bar_pending_line, line_text) != 0)
     {
         snprintf(s_overlay_bar_pending_line, sizeof(s_overlay_bar_pending_line), "%s", line_text);
-        s_overlay_bar_pending_dirty = 1U;
+        redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_TEXT);
     }
 
     if (s_overlay_bar_last_visible == 0U || s_overlay_bar_last_line_valid == 0U)
@@ -1960,7 +2047,7 @@ void redpic1_thermal_render_runtime_overlay(void)
         snprintf(s_overlay_bar_last_line, sizeof(s_overlay_bar_last_line), "%s", s_overlay_bar_pending_line);
         s_overlay_bar_last_visible = 1U;
         s_overlay_bar_last_line_valid = 1U;
-        s_overlay_bar_pending_dirty = 0U;
+        redpic1_thermal_clear_bottom_bar_dirty();
         s_overlay_bar_last_refresh_ms = now_ms;
         return;
     }
@@ -1970,7 +2057,9 @@ void redpic1_thermal_render_runtime_overlay(void)
         return;
     }
 
-    if ((uint32_t)(now_ms - s_overlay_bar_last_refresh_ms) < REDPIC1_THERMAL_OVERLAY_BAR_REFRESH_MS)
+    if (((s_overlay_bar_dirty_reason_mask &
+          (REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE | REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE)) == 0U) &&
+        ((uint32_t)(now_ms - s_overlay_bar_last_refresh_ms) < REDPIC1_THERMAL_OVERLAY_BAR_REFRESH_MS))
     {
         return;
     }
@@ -1979,7 +2068,7 @@ void redpic1_thermal_render_runtime_overlay(void)
     snprintf(s_overlay_bar_last_line, sizeof(s_overlay_bar_last_line), "%s", s_overlay_bar_pending_line);
     s_overlay_bar_last_visible = 1U;
     s_overlay_bar_last_line_valid = 1U;
-    s_overlay_bar_pending_dirty = 0U;
+    redpic1_thermal_clear_bottom_bar_dirty();
     s_overlay_bar_last_refresh_ms = now_ms;
 }
 
@@ -1989,7 +2078,8 @@ uint8_t redpic1_thermal_runtime_overlay_visible(void)
 }
 
 /* 处理热成像页本地按键。
- * KEY1 切色板，KEY2 切叠加条，KEY3 切暂停状态并按既有策略补提交流程。 */
+ * KEY1 切色板；KEY2 在宏开启时发送一次温度摘要到 ESP32，否则维持切叠加条；
+ * KEY3 切暂停状态并按既有策略补提交流程。 */
 void redpic1_thermal_handle_key(uint8_t key_value)
 {
     switch (key_value)
@@ -2001,12 +2091,17 @@ void redpic1_thermal_handle_key(uint8_t key_value)
             s_colorMode = 0U;
         }
         set_color_mode(s_colorMode);
+        redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PALETTE);
         break;
 
     case KEY2_PRES:
+#if (REDPIC1_THERMAL_KEY2_SEND_ESP_ACTIVE != 0U)
+        (void)redpic1_thermal_submit_snapshot_to_esp();
+#else
         s_runtime_overlay_visible = (uint8_t)!s_runtime_overlay_visible;
         redpic1_thermal_reset_bottom_bar_cache();
         redpic1_thermal_force_refresh();
+#endif
         break;
 
     case KEY3_PRES:
@@ -2018,6 +2113,7 @@ void redpic1_thermal_handle_key(uint8_t key_value)
         {
             redpic1_thermal_cancel_pending_present_and_clear_submit();
         }
+        redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PAUSE);
         redpic1_thermal_stage6l3_invalidate_history();
         if (resume_submit != 0U && s_display_paused == 0U)
         {

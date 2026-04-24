@@ -647,6 +647,7 @@ static EventBits_t app_service_cmd_busy_bits(app_service_cmd_id_t cmd_id)
     case APP_SERVICE_CMD_ENTER_FORCED_DEEP_SLEEP:
     case APP_SERVICE_CMD_PREPARE_STOP:
     case APP_SERVICE_CMD_PREPARE_STANDBY:
+    case APP_SERVICE_CMD_SEND_THERMAL_SNAPSHOT:
         return APP_EG_BIT_WIFI_BUSY;
 
     case APP_SERVICE_CMD_OTA_QUERY_LATEST:
@@ -713,6 +714,19 @@ static uint8_t app_service_execute_command(const app_service_cmd_t *cmd, app_ser
 
     case APP_SERVICE_CMD_PREPARE_STANDBY:
         ok = esp_host_prepare_for_standby(cmd->value);
+        break;
+
+    case APP_SERVICE_CMD_SEND_THERMAL_SNAPSHOT:
+    {
+        int16_t min_temp_x10 = (int16_t)(cmd->value & 0xFFFFU);
+        int16_t max_temp_x10 = (int16_t)((cmd->value >> 16) & 0xFFFFU);
+        int16_t center_temp_x10 = (int16_t)((uint16_t)cmd->arg0 |
+                                            ((uint16_t)cmd->arg1 << 8));
+
+        ok = esp_host_send_thermal_snapshot_x10(min_temp_x10,
+                                                max_temp_x10,
+                                                center_temp_x10);
+    }
         break;
 
     case APP_SERVICE_CMD_OTA_QUERY_LATEST:

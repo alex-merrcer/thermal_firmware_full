@@ -37,6 +37,10 @@ static uint8_t esp_host_exchange(uint8_t cmd,
                                  uint8_t arg0,
                                  uint8_t arg1,
                                  uint8_t *response_payload);
+static uint8_t esp_host_exchange_payload(const uint8_t *request_payload,
+                                         uint16_t request_len,
+                                         uint8_t expected_cmd,
+                                         uint8_t *response_payload);
 static uint8_t esp_host_encode_power_policy(power_policy_t policy);
 static uint8_t esp_host_encode_host_state(power_state_t state);
 static uint8_t esp_host_set_raw_host_state_now(uint8_t host_state, uint8_t *response_payload);
@@ -442,16 +446,36 @@ static uint8_t esp_host_exchange(uint8_t cmd,
                                  uint8_t *response_payload)
 {
     uint8_t payload[OTA_CTRL_HOST_PAYLOAD_LEN];
-    esp_host_frame_t frame;
-    uint8_t seq = esp_host_next_seq();
-    uint32_t status_bits = 0U;
-    uint8_t attempt = 0U;
 
     memset(payload, 0, sizeof(payload));
     payload[0] = cmd;
     payload[1] = arg0;
     payload[2] = arg1;
 
+    return esp_host_exchange_payload(payload,
+                                     OTA_CTRL_HOST_PAYLOAD_LEN,
+                                     cmd,
+                                     response_payload);
+}
+
+static uint8_t esp_host_exchange_payload(const uint8_t *request_payload,
+                                         uint16_t request_len,
+                                         uint8_t expected_cmd,
+                                         uint8_t *response_payload)
+{
+    esp_host_frame_t frame;
+    uint8_t seq = 0U;
+    uint32_t status_bits = 0U;
+    uint8_t attempt = 0U;
+
+    if (request_payload == 0 ||
+        request_len == 0U ||
+        request_len > OTA_CTRL_MAX_PAYLOAD_LEN)
+    {
+        return 0U;
+    }
+
+    seq = esp_host_next_seq();
     power_manager_acquire_lock(POWER_LOCK_ESP_HOST);
 
     for (attempt = 0U; attempt < ESP_HOST_RETRY_COUNT; ++attempt)
@@ -459,7 +483,7 @@ static uint8_t esp_host_exchange(uint8_t cmd,
         esp_host_flush_uart();
         esp_host_send_wake_preamble();
 
-        if (esp_host_send_frame(OTA_CTRL_MSG_HOST_REQ, seq, payload, OTA_CTRL_HOST_PAYLOAD_LEN) == 0U)
+        if (esp_host_send_frame(OTA_CTRL_MSG_HOST_REQ, seq, request_payload, request_len) == 0U)
         {
             power_manager_release_lock(POWER_LOCK_ESP_HOST);
             return 0U;
@@ -470,7 +494,7 @@ static uint8_t esp_host_exchange(uint8_t cmd,
             if (frame.msg_type != OTA_CTRL_MSG_HOST_RSP ||
                 frame.seq != seq ||
                 frame.payload_len < OTA_CTRL_HOST_PAYLOAD_LEN ||
-                frame.payload[0] != cmd)
+                frame.payload[0] != expected_cmd)
             {
                 continue;
             }
@@ -511,6 +535,31 @@ void esp_host_step(void)
 {
     /* Stable product mode: no background polling.
      * Host communication is triggered only by explicit user actions or OTA flows. */
+}
+
+uint8_t esp_host_send_thermal_snapshot_x10(int16_t min_temp_x10,
+                                           int16_t max_temp_x10,
+                                           int16_t center_temp_x10)
+{
+    uint8_t payload[OTA_CTRL_HOST_PAYLOAD_LEN];
+    uint8_t response[OTA_CTRL_HOST_PAYLOAD_LEN];
+
+    memset(payload, 0, sizeof(payload));
+    payload[0] = OTA_HOST_CMD_SEND_THERMAL_SNAPSHOT;
+    esp_host_write_u16le(&payload[1], (uint16_t)min_temp_x10);
+    esp_host_write_u16le(&payload[3], (uint16_t)max_temp_x10);
+    esp_host_write_u16le(&payload[5], (uint16_t)center_temp_x10);
+
+    if (esp_host_exchange_payload(payload,
+                                  OTA_CTRL_HOST_PAYLOAD_LEN,
+                                  OTA_HOST_CMD_SEND_THERMAL_SNAPSHOT,
+                                  response) == 0U)
+    {
+        esp_host_note_failure();
+        return 0U;
+    }
+
+    return (response[3] == OTA_HOST_RESULT_OK) ? 1U : 0U;
 }
 
 const esp_host_status_t *esp_host_get_status(void)

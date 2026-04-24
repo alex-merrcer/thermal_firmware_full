@@ -18,6 +18,9 @@ uint8_t esp_host_set_host_state_now(power_state_t state);
 uint8_t esp_host_prepare_for_stop(uint32_t timeout_ms);
 uint8_t esp_host_prepare_for_standby(uint32_t timeout_ms);
 uint8_t esp_host_enter_forced_deep_sleep_now(uint32_t timeout_ms);
+uint8_t esp_host_send_thermal_snapshot_x10(int16_t min_temp_x10,
+                                           int16_t max_temp_x10,
+                                           int16_t center_temp_x10);
 void esp_host_set_wifi(uint8_t enabled);
 void esp_host_set_ble(uint8_t enabled);
 void esp_host_set_debug_screen(uint8_t enabled);

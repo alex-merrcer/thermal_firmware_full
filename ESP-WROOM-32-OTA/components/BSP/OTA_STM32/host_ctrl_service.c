@@ -5,6 +5,7 @@
 
 #include "BLUE.h"
 #include "KEY.h"
+#include "MQTT.h"
 #include "UART.h"
 #include "WIFI.h"
 #include "driver/gpio.h"
@@ -59,6 +60,63 @@ static TickType_t s_awake_hold_deadline = 0;
 static uint8_t s_pending_runtime_apply = 0U;
 static uint8_t s_manual_sleep_diag = 0U;
 static uint8_t s_uart_wake_block_count = 0U;
+
+static int16_t host_ctrl_read_i16le(const uint8_t *buffer)
+{
+    return (int16_t)ota_ctrl_read_u16le(buffer);
+}
+
+static void host_ctrl_log_thermal_snapshot(const uint8_t *payload, uint16_t payload_len)
+{
+    int16_t min_temp_x10 = 0;
+    int16_t max_temp_x10 = 0;
+    int16_t center_temp_x10 = 0;
+    float min_temp = 0.0f;
+    float max_temp = 0.0f;
+    float center_temp = 0.0f;
+
+    if (payload == NULL || payload_len < OTA_CTRL_HOST_PAYLOAD_LEN)
+    {
+        ESP_LOGW(TAG, "THERMAL snapshot payload too short: %u", (unsigned int)payload_len);
+        return;
+    }
+
+    min_temp_x10 = host_ctrl_read_i16le(&payload[1]);
+    max_temp_x10 = host_ctrl_read_i16le(&payload[3]);
+    center_temp_x10 = host_ctrl_read_i16le(&payload[5]);
+    min_temp = ((float)min_temp_x10) / 10.0f;
+    max_temp = ((float)max_temp_x10) / 10.0f;
+    center_temp = ((float)center_temp_x10) / 10.0f;
+
+    ESP_LOGI(TAG,
+             "THERMAL snapshot min=%.1fC max=%.1fC center=%.1fC",
+             min_temp,
+             max_temp,
+             center_temp);
+}
+
+static void host_ctrl_forward_thermal_snapshot_to_cloud(const uint8_t *payload, uint16_t payload_len)
+{
+    int16_t min_temp_x10 = 0;
+    int16_t max_temp_x10 = 0;
+    int16_t center_temp_x10 = 0;
+    esp_err_t err = ESP_OK;
+
+    if (payload == NULL || payload_len < OTA_CTRL_HOST_PAYLOAD_LEN)
+    {
+        return;
+    }
+
+    min_temp_x10 = host_ctrl_read_i16le(&payload[1]);
+    max_temp_x10 = host_ctrl_read_i16le(&payload[3]);
+    center_temp_x10 = host_ctrl_read_i16le(&payload[5]);
+
+    err = mqtt_service_submit_thermal_snapshot_x10(min_temp_x10, max_temp_x10, center_temp_x10);
+    if (err != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Queue thermal snapshot to Alibaba MQTT failed: 0x%04X", (unsigned int)err);
+    }
+}
 
 static uint8_t host_ctrl_is_sleep_state(uint8_t host_state)
 {
@@ -527,12 +585,19 @@ static void host_ctrl_maybe_enter_sleep(void)
     }
 }
 
-static uint8_t host_ctrl_handle_command(uint8_t cmd, uint8_t arg0)
+static uint8_t host_ctrl_handle_command(uint8_t cmd, const uint8_t *payload, uint16_t payload_len)
 {
+    uint8_t arg0 = (payload_len > 1U && payload != NULL) ? payload[1] : 0U;
+
     switch (cmd)
     {
     case OTA_HOST_CMD_GET_STATUS:
     case OTA_HOST_CMD_PING:
+        return OTA_HOST_RESULT_OK;
+
+    case OTA_HOST_CMD_SEND_THERMAL_SNAPSHOT:
+        host_ctrl_log_thermal_snapshot(payload, payload_len);
+        host_ctrl_forward_thermal_snapshot_to_cloud(payload, payload_len);
         return OTA_HOST_RESULT_OK;
 
     case OTA_HOST_CMD_SET_WIFI:
@@ -630,6 +695,7 @@ void host_ctrl_service_init(void)
     gpio_hold_dis(LCD_PIN_BL);
     LCD_PanelSleep();
     host_ctrl_restore_deep_ctx(wake_cause);
+    (void)mqtt_service_init();
 
     ESP_LOGI(TAG, "Wake cause=%s", host_ctrl_wakeup_cause_text(wake_cause));
 }
@@ -643,6 +709,8 @@ void host_ctrl_service_step(void)
         s_pending_runtime_apply = 0U;
         host_ctrl_apply_runtime_state();
     }
+
+    mqtt_service_step();
 
     host_ctrl_maybe_enter_sleep();
 
@@ -693,7 +761,7 @@ bool host_ctrl_service_handle_frame(const ota_ctrl_frame_t *frame)
     }
 
     cmd = frame->payload[0];
-    result = host_ctrl_handle_command(cmd, frame->payload[1]);
+    result = host_ctrl_handle_command(cmd, frame->payload, frame->payload_len);
     status_bits = host_ctrl_status_bits();
 
     rsp[0] = cmd;

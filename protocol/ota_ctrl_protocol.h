@@ -138,6 +138,7 @@ extern "C" {
 #define OTA_HOST_CMD_PING                  0x06U
 #define OTA_HOST_CMD_SET_POWER_POLICY      0x07U
 #define OTA_HOST_CMD_SET_HOST_STATE        0x08U
+#define OTA_HOST_CMD_SEND_THERMAL_SNAPSHOT 0x09U
 
 #define OTA_HOST_RESULT_OK                 0x00U
 #define OTA_HOST_RESULT_UNSUPPORTED        0x01U
