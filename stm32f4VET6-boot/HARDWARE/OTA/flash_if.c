@@ -1,0 +1,144 @@
+
+/* Includes ------------------------------------------------------------------*/
+#include "flash_if.h"
+#include "iap.h"
+
+/* Private functions ---------------------------------------------------------*/
+static uint32_t GetSector(uint32_t Address);
+
+uint32_t APPLICATION_ADDRESS = FLASH_APP1_ADDR;
+
+
+/**
+  * @brief  Unlocks Flash for write access
+  * @param  None
+  * @retval None
+  */
+void FLASH_If_Init(void)
+{
+  FLASH_Unlock();
+
+  /* Clear pending flags (if any) */
+  FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR |
+                  FLASH_FLAG_PGAERR | FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
+}
+
+uint32_t MY_FLASH_Erase(uint32_t Address)
+{
+    uint32_t StartSector = GetSector(Address);
+
+    if (FLASH_EraseSector(StartSector, VoltageRange_3) != FLASH_COMPLETE)
+    {
+      /* Error occurred while page erase */
+      return (1);
+    }
+    return 0;
+}
+
+/**
+  * @brief  This function writes a data buffer in flash (data are 32-bit aligned).
+  * @note   After writing data buffer, the flash content is checked.
+  * @param  FlashAddress: start address for writing data buffer
+  * @param  Data: pointer on data buffer
+  * @param  DataLength: length of data buffer (unit is 32-bit word)
+  * @retval 0: Data successfully written to Flash memory
+  *         1: Error occurred while writing data in Flash memory
+  *         2: Written Data in flash memory is different from expected one
+  */
+uint32_t FLASH_If_Write(__IO uint32_t *FlashAddress, uint32_t *Data, uint32_t DataLength)
+{
+  uint32_t i = 0;
+
+  FLASH_Unlock();
+
+  for (i = 0; (i < DataLength) && (*FlashAddress <= (USER_FLASH_END_ADDRESS - 4)); i++)
+  {
+    /* Device voltage range supposed to be [2.7V to 3.6V], the operation will
+       be done by word */
+    if (FLASH_ProgramWord(*FlashAddress, *(uint32_t *)(Data + i)) == FLASH_COMPLETE)
+    {
+      /* Check the written value */
+      if (*(uint32_t *)*FlashAddress != *(uint32_t *)(Data + i))
+      {
+        /* Flash content doesn't match SRAM content */
+        return (2);
+      }
+      /* Increment FLASH destination address */
+      *FlashAddress += 4;
+    }
+    else
+    {
+      /* Error occurred while writing data in Flash memory */
+      return (1);
+    }
+  }
+
+  FLASH_Lock();
+  return (0);
+}
+
+/**
+  * @brief  Gets the sector of a given address
+  * @param  Address: Flash address
+  * @retval The sector of a given address
+  */
+static uint32_t GetSector(uint32_t Address)
+{
+  uint32_t sector = 0;
+
+  if ((Address < ADDR_FLASH_SECTOR_1) && (Address >= ADDR_FLASH_SECTOR_0))
+  {
+    sector = FLASH_Sector_0;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_2) && (Address >= ADDR_FLASH_SECTOR_1))
+  {
+    sector = FLASH_Sector_1;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_3) && (Address >= ADDR_FLASH_SECTOR_2))
+  {
+    sector = FLASH_Sector_2;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_4) && (Address >= ADDR_FLASH_SECTOR_3))
+  {
+    sector = FLASH_Sector_3;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_5) && (Address >= ADDR_FLASH_SECTOR_4))
+  {
+    sector = FLASH_Sector_4;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_6) && (Address >= ADDR_FLASH_SECTOR_5))
+  {
+    sector = FLASH_Sector_5;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_7) && (Address >= ADDR_FLASH_SECTOR_6))
+  {
+    sector = FLASH_Sector_6;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_8) && (Address >= ADDR_FLASH_SECTOR_7))
+  {
+    sector = FLASH_Sector_7;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_9) && (Address >= ADDR_FLASH_SECTOR_8))
+  {
+    sector = FLASH_Sector_8;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_10) && (Address >= ADDR_FLASH_SECTOR_9))
+  {
+    sector = FLASH_Sector_9;
+  }
+  else if ((Address < ADDR_FLASH_SECTOR_11) && (Address >= ADDR_FLASH_SECTOR_10))
+  {
+    sector = FLASH_Sector_10;
+  }
+  else
+  {
+    sector = FLASH_Sector_11;
+  }
+  return sector;
+}
+
+/**
+  * @}
+  */
+
+/******************* (C) COPYRIGHT 2011 STMicroelectronics *****END OF FILE****/

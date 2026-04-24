@@ -1,0 +1,178 @@
+#ifndef OTA_CTRL_PROTOCOL_H
+#define OTA_CTRL_PROTOCOL_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define OTA_CTRL_SOF1                    0x55U
+#define OTA_CTRL_SOF2                    0xAAU
+
+#define OTA_CTRL_PROTOCOL_VERSION        0x03U
+
+#define OTA_CTRL_MAX_PAYLOAD_LEN         96U
+
+#define OTA_CTRL_MSG_REQ                 0x01U
+#define OTA_CTRL_MSG_CANCEL              0x02U
+#define OTA_CTRL_MSG_GO                  0x03U
+
+#define OTA_CTRL_MSG_ACK                 0x81U
+#define OTA_CTRL_MSG_STATUS              0x82U
+#define OTA_CTRL_MSG_READY               0x83U
+#define OTA_CTRL_MSG_ERROR               0x84U
+#define OTA_CTRL_MSG_META                0x85U
+#define OTA_CTRL_MSG_RESULT              0x86U
+#define OTA_CTRL_MSG_HOST_REQ            0x20U
+#define OTA_CTRL_MSG_HOST_RSP            0xA0U
+#define OTA_CTRL_MSG_HOST_EVT            0xA1U
+
+#define OTA_CTRL_REQ_TYPE_UPGRADE        0x01U
+#define OTA_CTRL_REQ_TYPE_ROLLBACK       0x02U
+
+#define OTA_CTRL_REQ_FLAG_CHECK_ONLY     0x00000010UL
+
+#define OTA_CTRL_READY_FLAG_RESUME_SUPPORTED 0x0001U
+#define OTA_CTRL_READY_FLAG_CACHE_HIT        0x0002U
+
+#define OTA_CTRL_GO_FLAG_RESUME_REQUESTED    0x0001U
+
+#define OTA_CTRL_META_KIND_IMAGE_HEADER      0x01U
+#define OTA_CTRL_META_KIND_RESERVED          0x02U
+
+#define OTA_CTRL_PARTITION_APP1          0x00U
+#define OTA_CTRL_PARTITION_APP2          0x01U
+
+#define OTA_CTRL_VERSION_LEN             16U
+#define OTA_CTRL_PRODUCT_ID_LEN          16U
+#define OTA_CTRL_HW_REV_LEN              8U
+#define OTA_CTRL_UID_LEN                 12U
+#define OTA_CTRL_FINGERPRINT_LEN         32U
+
+#define OTA_CTRL_REQ_PAYLOAD_LEN         60U
+#define OTA_CTRL_ACK_PAYLOAD_LEN         6U
+#define OTA_CTRL_STATUS_PAYLOAD_LEN      12U
+#define OTA_CTRL_READY_PAYLOAD_LEN       64U
+#define OTA_CTRL_ERROR_PAYLOAD_LEN       4U
+#define OTA_CTRL_GO_PAYLOAD_LEN          8U
+#define OTA_CTRL_RESULT_PAYLOAD_LEN      8U
+#define OTA_CTRL_META_PAYLOAD_HDR_LEN    8U
+#define OTA_CTRL_META_MAX_CHUNK_LEN      (OTA_CTRL_MAX_PAYLOAD_LEN - OTA_CTRL_META_PAYLOAD_HDR_LEN)
+
+#define OTA_CTRL_STAGE_IDLE              0U
+#define OTA_CTRL_STAGE_QUERY             10U
+#define OTA_CTRL_STAGE_DOWNLOAD          20U
+#define OTA_CTRL_STAGE_VERIFY_SIG        30U
+#define OTA_CTRL_STAGE_VERIFY_CRC        40U
+#define OTA_CTRL_STAGE_AES_PREPARE       50U
+#define OTA_CTRL_STAGE_READY             60U
+#define OTA_CTRL_STAGE_TRANSFER          70U
+#define OTA_CTRL_STAGE_YMODEM            OTA_CTRL_STAGE_TRANSFER
+#define OTA_CTRL_STAGE_DONE              80U
+
+#define OTA_CTRL_ERR_BUSY                1U
+#define OTA_CTRL_ERR_NO_WIFI             2U
+#define OTA_CTRL_ERR_FETCH_PACKAGE       3U
+#define OTA_CTRL_ERR_NO_PACKAGE          4U
+#define OTA_CTRL_ERR_PARTITION           5U
+#define OTA_CTRL_ERR_PRODUCT             6U
+#define OTA_CTRL_ERR_HW_REV              7U
+#define OTA_CTRL_ERR_SIGNATURE           8U
+#define OTA_CTRL_ERR_CRC32               9U
+#define OTA_CTRL_ERR_AES                 10U
+#define OTA_CTRL_ERR_WAIT_GO             11U
+#define OTA_CTRL_ERR_TRANSFER            12U
+#define OTA_CTRL_ERR_YMODEM              OTA_CTRL_ERR_TRANSFER
+#define OTA_CTRL_ERR_PROTOCOL            13U
+#define OTA_CTRL_ERR_FETCH_METADATA      14U
+#define OTA_CTRL_ERR_NO_UPDATE           15U
+#define OTA_CTRL_ERR_VERSION             16U
+
+#define OTA_CTRL_RESUME_REASON_OK                0x0000U
+#define OTA_CTRL_RESUME_REASON_STATE             0x5201U
+#define OTA_CTRL_RESUME_REASON_REQ_TYPE          0x5202U
+#define OTA_CTRL_RESUME_REASON_ACTIVE_SLOT       0x5203U
+#define OTA_CTRL_RESUME_REASON_TARGET_SLOT       0x5204U
+#define OTA_CTRL_RESUME_REASON_PROTOCOL          0x5205U
+#define OTA_CTRL_RESUME_REASON_CURRENT_VERSION   0x5206U
+#define OTA_CTRL_RESUME_REASON_TARGET_VERSION    0x5207U
+#define OTA_CTRL_RESUME_REASON_TRANSFER_SIZE     0x5208U
+#define OTA_CTRL_RESUME_REASON_PLAIN_SIZE        0x5209U
+#define OTA_CTRL_RESUME_REASON_CHECKPOINT_SIZE   0x520AU
+#define OTA_CTRL_RESUME_REASON_FINGERPRINT       0x520BU
+#define OTA_CTRL_RESUME_REASON_OFFSET_ZERO       0x520CU
+#define OTA_CTRL_RESUME_REASON_OFFSET_RANGE      0x520DU
+#define OTA_CTRL_RESUME_REASON_OFFSET_CHECKPOINT 0x520EU
+#define OTA_CTRL_RESUME_REASON_OFFSET_BLOCK      0x520FU
+
+#define OTA_CTRL_TXN_LOAD_SRC_NONE               0x0U
+#define OTA_CTRL_TXN_LOAD_SRC_VALID              0x1U
+#define OTA_CTRL_TXN_LOAD_SRC_EMPTY              0x2U
+#define OTA_CTRL_TXN_LOAD_SRC_INVALID            0x3U
+
+#define OTA_CTRL_DIAG_TXN_LOAD_CORE              0x5410U
+#define OTA_CTRL_DIAG_TXN_LOAD_OFFSETS           0x5420U
+#define OTA_CTRL_DIAG_TXN_LOAD_META              0x5430U
+#define OTA_CTRL_DIAG_TXN_LOAD_INV_SLOT1         0x5440U
+#define OTA_CTRL_DIAG_TXN_LOAD_INV_SLOT2         0x5450U
+#define OTA_CTRL_DIAG_TXN_LOAD_INV_TXN1          0x5460U
+#define OTA_CTRL_DIAG_TXN_LOAD_INV_TXN2          0x5470U
+#define OTA_CTRL_DIAG_TXN_LOAD_INV_TXN3          0x5480U
+#define OTA_CTRL_DIAG_TXN_LOAD_INV_TXN4          0x5490U
+
+#define OTA_CTRL_PERCENT_UNKNOWN         0xFFU
+
+#define OTA_CTRL_RESULT_OUTCOME_NONE       0U
+#define OTA_CTRL_RESULT_OUTCOME_SUCCESS    1U
+#define OTA_CTRL_RESULT_OUTCOME_RETRYABLE  2U
+#define OTA_CTRL_RESULT_OUTCOME_TERMINAL   3U
+
+#define OTA_CTRL_HOST_PAYLOAD_LEN          8U
+
+#define OTA_HOST_CMD_GET_STATUS            0x01U
+#define OTA_HOST_CMD_SET_WIFI              0x02U
+#define OTA_HOST_CMD_SET_BLE               0x03U
+#define OTA_HOST_CMD_SET_DEBUG_SCREEN      0x04U
+#define OTA_HOST_CMD_SET_REMOTE_KEYS       0x05U
+#define OTA_HOST_CMD_PING                  0x06U
+#define OTA_HOST_CMD_SET_POWER_POLICY      0x07U
+#define OTA_HOST_CMD_SET_HOST_STATE        0x08U
+
+#define OTA_HOST_RESULT_OK                 0x00U
+#define OTA_HOST_RESULT_UNSUPPORTED        0x01U
+#define OTA_HOST_RESULT_BUSY               0x02U
+#define OTA_HOST_RESULT_FAILED             0x03U
+
+#define OTA_HOST_STATUS_WIFI_ENABLED           (1UL << 0)
+#define OTA_HOST_STATUS_WIFI_CONNECTED         (1UL << 1)
+#define OTA_HOST_STATUS_BLE_ENABLED            (1UL << 2)
+#define OTA_HOST_STATUS_DEBUG_SCREEN_ENABLED   (1UL << 3)
+#define OTA_HOST_STATUS_REMOTE_KEYS_ENABLED    (1UL << 4)
+#define OTA_HOST_STATUS_HAS_CREDENTIALS        (1UL << 5)
+#define OTA_HOST_STATUS_READY_FOR_SLEEP        (1UL << 6)
+
+#define OTA_HOST_REMOTE_KEY_NONE           0x00U
+#define OTA_HOST_REMOTE_KEY_1              0x01U
+#define OTA_HOST_REMOTE_KEY_2              0x02U
+#define OTA_HOST_REMOTE_KEY_3              0x03U
+
+#define OTA_HOST_POWER_POLICY_PERFORMANCE  0x00U
+#define OTA_HOST_POWER_POLICY_BALANCED     0x01U
+#define OTA_HOST_POWER_POLICY_ECO          0x02U
+
+#define OTA_HOST_STATE_ACTIVE              0x00U
+#define OTA_HOST_STATE_SCREEN_OFF          0x01U
+#define OTA_HOST_STATE_STOP_IDLE           0x02U
+#define OTA_HOST_STATE_STANDBY_PREP        0x03U
+
+#define OTA_CTRL_HEADER_LEN              7U
+#define OTA_CTRL_CRC_LEN                 2U
+#define OTA_CTRL_FRAME_OVERHEAD          (OTA_CTRL_HEADER_LEN + OTA_CTRL_CRC_LEN)
+#define OTA_CTRL_MAX_FRAME_LEN           (OTA_CTRL_MAX_PAYLOAD_LEN + OTA_CTRL_FRAME_OVERHEAD)
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
