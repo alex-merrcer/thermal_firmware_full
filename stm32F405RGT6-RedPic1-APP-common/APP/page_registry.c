@@ -341,7 +341,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_ASYNC_TIMEOUT_WIFI_MS  3000UL
 #define PAGE_ASYNC_TIMEOUT_OTA_MS   7000UL
 #define PERF_BASELINE_REFRESH_MS    250UL
-#define PERF_SUBPAGE_COUNT          6U
+#define PERF_SUBPAGE_COUNT          7U
 #define PERF_LABEL_X                12U
 #define PERF_VALUE_X                180U
 #define PERF_TIMING_VALUE_X         106U
@@ -2870,6 +2870,7 @@ static void perf_baseline_draw_layout(uint8_t enabled)
     static const char *s_thermal_flow_labels[4] = { "ReadyRpl", "DispCncl", "3D Claim", "DoneCncl" };
     static const char *s_counter_labels[4] = { "KeyQ Drop", "UIQ Drop", "SvcQ Fail", "UART Err" };
     static const char *s_health_labels[4] = { "Wdg Fault", "Miss Prog", "Therm Act", "Screen" };
+    static const char *s_i2c_dma_labels[4] = { "I2C AF", "I2C BERR", "I2C ARLO", "I2C OVR" };
     static const char *s_disabled_labels[4] = { "Status", "Switch", "Action", "Scope" };
     const char **labels = s_snapshot_labels;
     uint8_t index = 0U;
@@ -2896,6 +2897,9 @@ static void perf_baseline_draw_layout(uint8_t enabled)
             break;
         case 5U:
             labels = s_thermal_flow_labels;
+            break;
+        case 6U:
+            labels = s_i2c_dma_labels;
             break;
         case 0U:
         default:
@@ -3220,6 +3224,51 @@ static void perf_baseline_draw_thermal_flow_detail(const app_perf_baseline_snaps
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
+static void perf_baseline_draw_i2c_dma_detail(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_af_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  value,
+                                  (snapshot->i2c_af_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_berr_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  value,
+                                  (snapshot->i2c_berr_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_arlo_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->i2c_arlo_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_ovr_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->i2c_ovr_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "TMO:%lu BUSY:%lu DMAE:%lu",
+             (unsigned long)snapshot->i2c_timeout_count,
+             (unsigned long)snapshot->i2c_busy_stuck_count,
+             (unsigned long)snapshot->i2c_dma_err_count);
+    snprintf(footer2,
+             sizeof(footer2),
+             "I2:%lu PairTO:%lu",
+             (unsigned long)snapshot->i2c_failure_count,
+             (unsigned long)snapshot->thermal_pair_timeout_count);
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
 static void perf_baseline_draw_counters(const app_perf_baseline_snapshot_t *snapshot)
 {
     char value[24];
@@ -3429,6 +3478,9 @@ static void perf_baseline_render(uint8_t full_refresh)
         break;
     case 5U:
         perf_baseline_draw_thermal_flow_detail(&snapshot);
+        break;
+    case 6U:
+        perf_baseline_draw_i2c_dma_detail(&snapshot);
         break;
     case 0U:
     default:

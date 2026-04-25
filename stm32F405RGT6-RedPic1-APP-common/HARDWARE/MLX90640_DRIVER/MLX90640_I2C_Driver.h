@@ -21,9 +21,22 @@
 #include "delay.h"
 #include <stdint.h>
 
+#ifndef REDPIC1_MLX90640_I2C_DMA_ENABLE
+    #define REDPIC1_MLX90640_I2C_DMA_ENABLE 1U
+#endif
+
+#ifndef REDPIC1_MLX90640_I2C_DMA_WORD_THRESHOLD
+    #define REDPIC1_MLX90640_I2C_DMA_WORD_THRESHOLD 32U
+#endif
+
+#ifndef REDPIC1_MLX90640_I2C_DMA_TIMEOUT_MS
+    #define REDPIC1_MLX90640_I2C_DMA_TIMEOUT_MS 60UL
+#endif
+
 
 
 void MLX90640_I2CInit(void);
+uint8_t MLX90640_I2CRuntimeInit(void);
 int MLX90640_I2CRead(uint8_t slaveAddr,uint16_t startAddress, uint16_t nMemAddressRead, uint16_t *data);
 int MLX90640_I2CWrite(uint8_t slaveAddr,uint16_t writeAddress, uint16_t data);
 //void MLX90640_I2CFreqSet(int freq);

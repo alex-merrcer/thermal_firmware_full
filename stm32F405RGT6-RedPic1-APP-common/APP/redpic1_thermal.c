@@ -777,6 +777,7 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
     if (s_v4_subpage_valid[other_subpage] != 0U &&
         (capture_tick_ms - s_v4_subpage_tick_ms[other_subpage]) > REDPIC1_THERMAL_STAGEV4_C1_SUBPAGE_MAX_AGE_MS)
     {
+        app_perf_baseline_record_thermal_pair_timeout();
         s_v4_subpage_valid[other_subpage] = 0U;
         s_v4_subpage_tick_ms[other_subpage] = 0U;
     }
@@ -2065,7 +2066,6 @@ void redpic1_thermal_step(void)
 #if (REDPIC1_THERMAL_STAGE6R_1_ACTIVE == 0U)
         if (MLX90640_I2CRead(MLX90640_ADDR, MLX90640_REG_STATUS, 1, &state) != 0)
         {
-            app_perf_baseline_record_i2c_failure();
             redpic1_thermal_note_backoff(1U);
             app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
             return;
@@ -2111,7 +2111,6 @@ void redpic1_thermal_step(void)
 #endif
             {
                 /* 硬故障: 真正的 I2C 总线错乱/NACK/校验失败，走原始的报错与退避逻辑 */
-                app_perf_baseline_record_i2c_failure();
                 redpic1_thermal_release_back_slot(back_slot);
                 redpic1_thermal_stage6l3_invalidate_history();
                 redpic1_thermal_note_backoff(1U);

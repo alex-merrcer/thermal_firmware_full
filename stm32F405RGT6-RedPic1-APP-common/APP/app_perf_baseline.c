@@ -41,8 +41,16 @@ static volatile uint32_t s_display_notify_count = 0U;
 static volatile uint32_t s_uart_error_count = 0U;
 static volatile uint32_t s_last_uart_error_flags = 0U;
 static volatile uint32_t s_i2c_failure_count = 0U;
+static volatile uint32_t s_i2c_af_count = 0U;
+static volatile uint32_t s_i2c_berr_count = 0U;
+static volatile uint32_t s_i2c_arlo_count = 0U;
+static volatile uint32_t s_i2c_ovr_count = 0U;
+static volatile uint32_t s_i2c_timeout_count = 0U;
+static volatile uint32_t s_i2c_busy_stuck_count = 0U;
+static volatile uint32_t s_i2c_dma_err_count = 0U;
 static volatile uint32_t s_dma_timeout_count = 0U;
 static volatile uint32_t s_thermal_backoff_count = 0U;
+static volatile uint32_t s_thermal_pair_timeout_count = 0U;
 static volatile uint32_t s_thermal_ready_replace_count = 0U;
 static volatile uint32_t s_thermal_display_cancel_count = 0U;
 static volatile uint32_t s_thermal_3d_sync_present_attempt_count = 0U;
@@ -191,8 +199,16 @@ void app_perf_baseline_reset(void)
     s_uart_error_count = 0U;
     s_last_uart_error_flags = 0U;
     s_i2c_failure_count = 0U;
+    s_i2c_af_count = 0U;
+    s_i2c_berr_count = 0U;
+    s_i2c_arlo_count = 0U;
+    s_i2c_ovr_count = 0U;
+    s_i2c_timeout_count = 0U;
+    s_i2c_busy_stuck_count = 0U;
+    s_i2c_dma_err_count = 0U;
     s_dma_timeout_count = 0U;
     s_thermal_backoff_count = 0U;
+    s_thermal_pair_timeout_count = 0U;
     s_thermal_ready_replace_count = 0U;
     s_thermal_display_cancel_count = 0U;
     s_thermal_3d_sync_present_attempt_count = 0U;
@@ -529,10 +545,58 @@ void app_perf_baseline_record_i2c_failure(void)
 #endif
 }
 
+void app_perf_baseline_record_i2c_transport_error(app_perf_i2c_error_t error_kind)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_failure_count++;
+
+    switch (error_kind)
+    {
+    case APP_PERF_I2C_ERROR_AF:
+        s_i2c_af_count++;
+        break;
+
+    case APP_PERF_I2C_ERROR_BERR:
+        s_i2c_berr_count++;
+        break;
+
+    case APP_PERF_I2C_ERROR_ARLO:
+        s_i2c_arlo_count++;
+        break;
+
+    case APP_PERF_I2C_ERROR_OVR:
+        s_i2c_ovr_count++;
+        break;
+
+    case APP_PERF_I2C_ERROR_BUSY_STUCK:
+        s_i2c_busy_stuck_count++;
+        break;
+
+    case APP_PERF_I2C_ERROR_DMA_ERR:
+        s_i2c_dma_err_count++;
+        break;
+
+    case APP_PERF_I2C_ERROR_TIMEOUT:
+    default:
+        s_i2c_timeout_count++;
+        break;
+    }
+#else
+    (void)error_kind;
+#endif
+}
+
 void app_perf_baseline_record_thermal_backoff(void)
 {
 #if APP_PERF_BASELINE_ENABLE
     s_thermal_backoff_count++;
+#endif
+}
+
+void app_perf_baseline_record_thermal_pair_timeout(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_thermal_pair_timeout_count++;
 #endif
 }
 
@@ -807,8 +871,16 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->uart_error_count = s_uart_error_count;
     snapshot->last_uart_error_flags = s_last_uart_error_flags;
     snapshot->i2c_failure_count = s_i2c_failure_count;
+    snapshot->i2c_af_count = s_i2c_af_count;
+    snapshot->i2c_berr_count = s_i2c_berr_count;
+    snapshot->i2c_arlo_count = s_i2c_arlo_count;
+    snapshot->i2c_ovr_count = s_i2c_ovr_count;
+    snapshot->i2c_timeout_count = s_i2c_timeout_count;
+    snapshot->i2c_busy_stuck_count = s_i2c_busy_stuck_count;
+    snapshot->i2c_dma_err_count = s_i2c_dma_err_count;
     snapshot->dma_timeout_count = s_dma_timeout_count;
     snapshot->thermal_backoff_count = s_thermal_backoff_count;
+    snapshot->thermal_pair_timeout_count = s_thermal_pair_timeout_count;
     snapshot->thermal_ready_replace_count = s_thermal_ready_replace_count;
     snapshot->thermal_display_cancel_count = s_thermal_display_cancel_count;
     snapshot->thermal_3d_sync_present_attempt_count = s_thermal_3d_sync_present_attempt_count;

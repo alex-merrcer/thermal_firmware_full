@@ -20,6 +20,7 @@
 #include "lcd_dma.h"
 #include "lcd_init.h"
 #include "low_power_runtime.h"
+#include "MLX90640_I2C_Driver.h"
 #include "ota_ctrl_protocol.h"
 #include "ota_service.h"
 #include "power_manager.h"
@@ -1315,6 +1316,7 @@ static void power_wdg_task(void *pvParameters)
 void app_rtos_runtime_init(void)
 {
     uint8_t display_runtime_ok = 0U;
+    uint8_t mlx_i2c_runtime_ok = 0U;
 
     power_manager_init();
     rtc_lp_service_init();
@@ -1336,6 +1338,7 @@ void app_rtos_runtime_init(void)
     KEY_EXTI_Init();
     clock_profile_service_init();
     app_perf_baseline_init();
+    mlx_i2c_runtime_ok = MLX90640_I2CRuntimeInit();
 
     redpic1_thermal_init();
     redpic1_thermal_suspend();
@@ -1361,6 +1364,7 @@ void app_rtos_runtime_init(void)
         s_service_done_sem == 0 ||
         s_service_sync_mutex == 0 ||
         s_settings_mutex == 0 ||
+        mlx_i2c_runtime_ok == 0U ||
         display_runtime_ok == 0U ||
         s_runtime_events == 0)
     {

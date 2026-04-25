@@ -28,6 +28,17 @@ typedef enum
     APP_PERF_LCD_DMA_STATUS_ERROR
 } app_perf_lcd_dma_status_t;
 
+typedef enum
+{
+    APP_PERF_I2C_ERROR_AF = 0,
+    APP_PERF_I2C_ERROR_BERR,
+    APP_PERF_I2C_ERROR_ARLO,
+    APP_PERF_I2C_ERROR_OVR,
+    APP_PERF_I2C_ERROR_TIMEOUT,
+    APP_PERF_I2C_ERROR_BUSY_STUCK,
+    APP_PERF_I2C_ERROR_DMA_ERR
+} app_perf_i2c_error_t;
+
 typedef struct
 {
     uint8_t enabled;
@@ -111,8 +122,16 @@ typedef struct
     uint32_t uart_error_count;
     uint32_t last_uart_error_flags;
     uint32_t i2c_failure_count;
+    uint32_t i2c_af_count;
+    uint32_t i2c_berr_count;
+    uint32_t i2c_arlo_count;
+    uint32_t i2c_ovr_count;
+    uint32_t i2c_timeout_count;
+    uint32_t i2c_busy_stuck_count;
+    uint32_t i2c_dma_err_count;
     uint32_t dma_timeout_count;
     uint32_t thermal_backoff_count;
+    uint32_t thermal_pair_timeout_count;
     uint32_t thermal_ready_replace_count;
     uint32_t thermal_display_cancel_count;
     uint32_t thermal_3d_sync_present_attempt_count;
@@ -167,7 +186,9 @@ void app_perf_baseline_record_service_queue_fail(void);
 void app_perf_baseline_record_display_queue_fail(void);
 void app_perf_baseline_record_uart_errors(uint32_t flags);
 void app_perf_baseline_record_i2c_failure(void);
+void app_perf_baseline_record_i2c_transport_error(app_perf_i2c_error_t error_kind);
 void app_perf_baseline_record_thermal_backoff(void);
+void app_perf_baseline_record_thermal_pair_timeout(void);
 void app_perf_baseline_record_thermal_ready_replace(void);
 void app_perf_baseline_record_thermal_display_cancel(void);
 void app_perf_baseline_record_thermal_3d_sync_present_attempt(void);
