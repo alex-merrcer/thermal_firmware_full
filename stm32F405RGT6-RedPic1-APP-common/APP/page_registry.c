@@ -3048,7 +3048,7 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
     char footer1[32];
     char footer2[40];
     const char *refresh_state = "16";
-    unsigned long pr_profile = (unsigned long)REDPIC1_THERMAL_STAGEP8R7_TASK_PRIO_PROFILE;
+    const char *pair_state = "OFF";
 
     if (snapshot == 0)
     {
@@ -3057,6 +3057,10 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
 
 #if (REDPIC1_THERMAL_32HZ_AB_TEST_ENABLE != 0U)
     refresh_state = "32";
+#endif
+
+#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ENABLE != 0U)
+    pair_state = "ON";
 #endif
 
     perf_baseline_format_triplet(value,
@@ -3097,10 +3101,10 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
              ui_renderer_power_state_text(snapshot->power_state));
     snprintf(footer2,
              sizeof(footer2),
-             "Clock:%s R:%s Pr:%lu",
+             "Clock:%s R:%s P:%s",
              ui_renderer_clock_profile_text(snapshot->clock_profile),
              refresh_state,
-             pr_profile);
+             pair_state);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3110,26 +3114,11 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
     char overlay[24];
     char footer1[32];
     char footer2[40];
-    const char *render_mode = "LEG";
-    unsigned long area_width = (unsigned long)LCD_W;
-    unsigned long area_height = (unsigned long)(LCD_H - 20U);
 
     if (snapshot == 0)
     {
         return;
     }
-
-#if (REDPIC1_THERMAL_STAGEP8R1_BLOCK_NEAREST_ENABLE != 0U)
-    render_mode = "BN";
-#elif (REDPIC1_THERMAL_STAGEP8R3_MAP_TABLE_ENABLE != 0U) && \
-      (REDPIC1_THERMAL_STAGEP8R4_FIXED_BILINEAR_ENABLE != 0U)
-    render_mode = "FB";
-#endif
-
-#if (REDPIC1_THERMAL_STAGEP8R2_SMALL_AREA_ENABLE != 0U)
-    area_width = (unsigned long)REDPIC1_THERMAL_STAGEP8R2_AREA_WIDTH;
-    area_height = (unsigned long)REDPIC1_THERMAL_STAGEP8R2_AREA_HEIGHT;
-#endif
 
     perf_baseline_format_triplet(value,
                                  sizeof(value),
@@ -3172,10 +3161,9 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
     snprintf(footer1, sizeof(footer1), "Ovly %s", overlay);
     snprintf(footer2,
              sizeof(footer2),
-             "RM:%s A:%lux%lu",
-             render_mode,
-             area_width,
-             area_height);
+             "Area:%lux%lu",
+             (unsigned long)LCD_W,
+             (unsigned long)(LCD_H - 20U));
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 

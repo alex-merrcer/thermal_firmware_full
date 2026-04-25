@@ -48,19 +48,9 @@
 #define INPUT_TASK_PRIO                8U
 #define INPUT_STK_SIZE                 384U
 
-#if (REDPIC1_THERMAL_STAGEP8R7_TASK_PRIO_PROFILE == 1U)
-    #define DISPLAY_TASK_PRIO          8U
-    #define THERMAL_TASK_PRIO          7U
-    #define THERMAL_TASK_ACTIVE_PRIO   7U
-#elif (REDPIC1_THERMAL_STAGEP8R7_TASK_PRIO_PROFILE == 2U)
-    #define DISPLAY_TASK_PRIO          7U
-    #define THERMAL_TASK_PRIO          5U
-    #define THERMAL_TASK_ACTIVE_PRIO   5U
-#else
-    #define DISPLAY_TASK_PRIO          8U
-    #define THERMAL_TASK_PRIO          5U
-    #define THERMAL_TASK_ACTIVE_PRIO   5U
-#endif
+#define DISPLAY_TASK_PRIO              8U
+#define THERMAL_TASK_PRIO              5U
+#define THERMAL_TASK_ACTIVE_PRIO       5U
 
 #define DISPLAY_STK_SIZE               1280U
 #define SERVICE_TASK_PRIO              7U

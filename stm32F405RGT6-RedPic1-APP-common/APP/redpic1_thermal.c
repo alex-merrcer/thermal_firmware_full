@@ -122,6 +122,12 @@
     #define REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE 0U
 #endif
 
+#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ENABLE != 0U)
+    #define REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE 0U
+#endif
+
 #if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
     #define REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ACTIVE 1U
 #else
@@ -276,6 +282,12 @@ static CCMRAM float s_previous_filtered_temp_frame[REDPIC1_THERMAL_PIXEL_COUNT];
 static CCMRAM float s_current_visual_temp_frame[REDPIC1_THERMAL_PIXEL_COUNT];    ///< 当前帧自适应滤波结果 (CCM RAM)
 static uint8_t  s_filter_history_valid = 0U;                                   ///< 历史滤波数据有效性标志
 static CCMRAM uint8_t s_diag_pattern_frame[REDPIC1_THERMAL_PIXEL_COUNT];       ///< 诊断测试图案灰度数据 (CCM RAM)
+
+#if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
+static CCMRAM float s_v4_subpage_temp_frame[2][REDPIC1_THERMAL_PIXEL_COUNT];
+static uint32_t s_v4_subpage_tick_ms[2] = { 0U, 0U };
+static uint8_t  s_v4_subpage_valid[2] = { 0U, 0U };
+#endif
 
 static void redpic1_thermal_free_slot_locked(uint8_t slot_index);
 /* ========================================================================= */
@@ -726,7 +738,70 @@ static void redpic1_thermal_reset_processing_history(void)
     redpic1_thermal_reset_display_window_state();
     redpic1_thermal_reset_visual_filter_state();
     s_last_capture_tick_ms = 0U;
+#if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
+    s_v4_subpage_tick_ms[0] = 0U;
+    s_v4_subpage_tick_ms[1] = 0U;
+    s_v4_subpage_valid[0] = 0U;
+    s_v4_subpage_valid[1] = 0U;
+#endif
 }
+
+#if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
+static uint8_t redpic1_thermal_stagev4_c1_pixel_subpage(uint16_t pixel_index)
+{
+    uint16_t row = (uint16_t)(pixel_index / REDPIC1_THERMAL_SRC_COLS);
+    uint16_t col = (uint16_t)(pixel_index % REDPIC1_THERMAL_SRC_COLS);
+
+    return (uint8_t)((row ^ col) & 0x01U);
+}
+
+static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
+                                                      uint8_t subpage,
+                                                      uint32_t capture_tick_ms,
+                                                      uint32_t *out_capture_tick_ms)
+{
+    uint8_t other_subpage = (uint8_t)(subpage ^ 0x01U);
+    uint16_t pixel_index = 0U;
+
+    if (frame_data == 0 || subpage > 1U)
+    {
+        return 0U;
+    }
+
+    memcpy(s_v4_subpage_temp_frame[subpage],
+           frame_data,
+           sizeof(s_v4_subpage_temp_frame[subpage]));
+    s_v4_subpage_tick_ms[subpage] = capture_tick_ms;
+    s_v4_subpage_valid[subpage] = 1U;
+
+    if (s_v4_subpage_valid[other_subpage] != 0U &&
+        (capture_tick_ms - s_v4_subpage_tick_ms[other_subpage]) > REDPIC1_THERMAL_STAGEV4_C1_SUBPAGE_MAX_AGE_MS)
+    {
+        s_v4_subpage_valid[other_subpage] = 0U;
+        s_v4_subpage_tick_ms[other_subpage] = 0U;
+    }
+
+    if (s_v4_subpage_valid[other_subpage] == 0U)
+    {
+        return 0U;
+    }
+
+    for (pixel_index = 0U; pixel_index < REDPIC1_THERMAL_PIXEL_COUNT; ++pixel_index)
+    {
+        uint8_t owner_subpage = redpic1_thermal_stagev4_c1_pixel_subpage(pixel_index);
+        frame_data[pixel_index] = s_v4_subpage_temp_frame[owner_subpage][pixel_index];
+    }
+
+    if (out_capture_tick_ms != 0)
+    {
+        *out_capture_tick_ms = (s_v4_subpage_tick_ms[subpage] >= s_v4_subpage_tick_ms[other_subpage]) ?
+                               s_v4_subpage_tick_ms[subpage] :
+                               s_v4_subpage_tick_ms[other_subpage];
+    }
+
+    return 1U;
+}
+#endif
 
 static void redpic1_thermal_stage6l3_invalidate_history(void)
 {
@@ -1964,6 +2039,7 @@ void redpic1_thermal_step(void)
         redpic1_thermal_frame_slot_t *back_slot = 0;
         const float *gray_source_frame = 0;
         uint8_t high_motion_frame = 0U;
+        uint8_t captured_subpage = 0U;
         uint32_t capture_tick_ms = 0U;
         uint32_t now_ms = power_manager_get_tick_ms();
 
@@ -2013,7 +2089,11 @@ void redpic1_thermal_step(void)
         get_temp_start_cycle = app_perf_baseline_cycle_now();
         
         /* ============== 6R_2 核心优化点：分离软超时与硬故障 ============== */
+#if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
+        int temp_status = get_temp_ex(back_slot->temp_frame, &ta, &captured_subpage);
+#else
         int temp_status = get_temp(back_slot->temp_frame, &ta);
+#endif
         
         if (temp_status < 0)
         {
@@ -2044,6 +2124,19 @@ void redpic1_thermal_step(void)
 
         app_perf_baseline_record_get_temp_us(app_perf_baseline_elapsed_us(get_temp_start_cycle));
 
+        capture_tick_ms = power_manager_get_tick_ms();
+#if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
+        if (redpic1_thermal_stagev4_c1_try_compose(back_slot->temp_frame,
+                                                   captured_subpage,
+                                                   capture_tick_ms,
+                                                   &capture_tick_ms) == 0U)
+        {
+            redpic1_thermal_release_back_slot(back_slot);
+            app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
+            return;
+        }
+#endif
+
         if (redpic1_thermal_frame_data_is_valid(back_slot->temp_frame) == 0U)
         {
             redpic1_thermal_release_back_slot(back_slot);
@@ -2052,7 +2145,6 @@ void redpic1_thermal_step(void)
             return;
         }
 
-        capture_tick_ms = power_manager_get_tick_ms();
         if (redpic1_thermal_stage6l3_capture_gap_exceeded(capture_tick_ms) != 0U)
         {
             redpic1_thermal_stage6l3_invalidate_history();

@@ -43,16 +43,27 @@ int mlx90640_init(void)
 }
 /* 获取一帧温度结果：
  * data 指向 768 个像素温度，ta 返回当前环境温度/芯片温度估计值。 */
-int get_temp(float *data ,float *ta)
-{	
+int get_temp_ex(float *data, float *ta, uint8_t *subpage)
+{
 	int status = MLX90640_GetFrameData(MLX90640_ADDR, g_sensorFrame);
 	if(status < 0)
 	{
 		return status;
 	}
-	 *ta = MLX90640_GetTa(g_sensorFrame, &MLXPars);
+
+	if(subpage != 0)
+	{
+		*subpage = (uint8_t)(g_sensorFrame[833] & 0x01U);
+	}
+
+	*ta = MLX90640_GetTa(g_sensorFrame, &MLXPars);
 	MLX90640_CalculateTo(g_sensorFrame, &MLXPars, 0.95f , *ta - 8.0f, data);
 	return 0;
+}
+
+int get_temp(float *data ,float *ta)
+{
+	return get_temp_ex(data, ta, 0);
 }
 
 /* 把 MLX90640 的 24x32 原始布局转成 32x24。

@@ -11,6 +11,7 @@ void update_com_reg(float ta);
 
 int mlx90640_init(void);
 int get_temp(float *data,float *ta);
+int get_temp_ex(float *data, float *ta, uint8_t *subpage);
 void temp_data_sort(float *frameData,float *result);//温度数据镜像
 void get_min_max_temp(float *frameData, float *min, uint16_t *min_pos,float *max,uint16_t *max_pos);//获取最低最高温度和位置
 void conversion_data (float *frameData,float min ,float max, uint8_t *result);	//温度值转8位灰度

@@ -52,55 +52,10 @@
     #define LCD_DMA_THERMAL_STRIPE_ROWS 1U
 #endif
 
-#if (REDPIC1_THERMAL_STAGEP8R1_BLOCK_NEAREST_ENABLE != 0U)
-    #define LCD_DMA_STAGEP8R1_ACTIVE 1U
-#else
-    #define LCD_DMA_STAGEP8R1_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEP8R2_SMALL_AREA_ENABLE != 0U)
-    #define LCD_DMA_STAGEP8R2_ACTIVE 1U
-#else
-    #define LCD_DMA_STAGEP8R2_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEP8R3_MAP_TABLE_ENABLE != 0U)
-    #define LCD_DMA_STAGEP8R3_ACTIVE 1U
-#else
-    #define LCD_DMA_STAGEP8R3_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEP8R3_MAP_TABLE_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGEP8R4_FIXED_BILINEAR_ENABLE != 0U)
-    #define LCD_DMA_STAGEP8R4_ACTIVE 1U
-#else
-    #define LCD_DMA_STAGEP8R4_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEP8R5_SWAPPED_LUT_ENABLE != 0U)
-    #define LCD_DMA_STAGEP8R5_ACTIVE 1U
-#else
-    #define LCD_DMA_STAGEP8R5_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEP8R6_REPEAT_FILL_ENABLE != 0U) && \
-    (LCD_DMA_STAGEP8R1_ACTIVE != 0U)
-    #define LCD_DMA_STAGEP8R6_ACTIVE 1U
-#else
-    #define LCD_DMA_STAGEP8R6_ACTIVE 0U
-#endif
-
-#if LCD_DMA_STAGEP8R2_ACTIVE
-    #define LCD_DMA_THERMAL_AREA_WIDTH  REDPIC1_THERMAL_STAGEP8R2_AREA_WIDTH
-    #define LCD_DMA_THERMAL_AREA_HEIGHT REDPIC1_THERMAL_STAGEP8R2_AREA_HEIGHT
-    #define LCD_DMA_THERMAL_AREA_X0     ((LCD_W - LCD_DMA_THERMAL_AREA_WIDTH) / 2U)
-    #define LCD_DMA_THERMAL_AREA_Y0     ((THERMAL_OUTPUT_ROWS - LCD_DMA_THERMAL_AREA_HEIGHT) / 2U)
-#else
-    #define LCD_DMA_THERMAL_AREA_WIDTH  LCD_W
-    #define LCD_DMA_THERMAL_AREA_HEIGHT THERMAL_OUTPUT_ROWS
-    #define LCD_DMA_THERMAL_AREA_X0     0U
-    #define LCD_DMA_THERMAL_AREA_Y0     0U
-#endif
+#define LCD_DMA_THERMAL_AREA_WIDTH  LCD_W
+#define LCD_DMA_THERMAL_AREA_HEIGHT THERMAL_OUTPUT_ROWS
+#define LCD_DMA_THERMAL_AREA_X0     0U
+#define LCD_DMA_THERMAL_AREA_Y0     0U
 
 #if USE_HORIZONTAL == 2
     #define LCD_DMA_ORIENTED_SRC_WIDTH  THERMAL_SRC_HEIGHT
@@ -126,12 +81,6 @@ typedef enum {
     LCD_DMA_MODE_THERMAL = 1
 } lcd_dma_mode_t;
 
-typedef enum {
-    LCD_DMA_RENDER_MODE_LEGACY = 0,
-    LCD_DMA_RENDER_MODE_BLOCK_NEAREST = 1,
-    LCD_DMA_RENDER_MODE_FIXED_BILINEAR = 2
-} lcd_dma_render_mode_t;
-
 static volatile lcd_dma_mode_t s_dma_mode = LCD_DMA_MODE_IDLE;
 static CCMRAM uint8_t g_interpRows[THERMAL_SRC_HEIGHT][THERMAL_RENDER_WIDTH];
 static CCMRAM uint8_t g_topEdgeRows[TOP_EDGE_ROWS][THERMAL_RENDER_WIDTH];
@@ -139,10 +88,6 @@ static CCMRAM uint8_t g_bottomEdgeRows[BOTTOM_EDGE_ROWS][THERMAL_RENDER_WIDTH];
 /* 伪彩色 LUT。 */
 CCMRAM uint16_t GCM_Pseudo3[256];
 
-#if LCD_DMA_STAGE6_6C_ACTIVE
-static CCMRAM uint8_t g_colorHighByteLut[256];
-static CCMRAM uint8_t g_colorLowByteLut[256];
-#endif
 
 #if LCD_DMA_STAGE6_6B_ACTIVE
 typedef enum {
@@ -166,20 +111,6 @@ static uint8_t s_renderMappingReady = 0U;
 #endif
 
 typedef struct {
-    uint8_t index0;
-    uint8_t index1;
-    uint16_t weight1_q8;
-} lcd_dma_axis_map_t;
-
-static CCMRAM uint8_t g_blockOwnerX[LCD_W];
-static CCMRAM uint8_t g_blockOwnerY[THERMAL_OUTPUT_ROWS];
-static CCMRAM lcd_dma_axis_map_t g_fixedXMap[LCD_W];
-static CCMRAM lcd_dma_axis_map_t g_fixedYMap[THERMAL_OUTPUT_ROWS];
-#if LCD_DMA_STAGEP8R6_ACTIVE
-static CCMRAM uint8_t g_blockNearestRowCache[LINE_BUF_SIZE];
-#endif
-
-typedef struct {
     uint32_t render_us;
     uint32_t dma_start_us;
     uint32_t dma_wait_us;
@@ -189,13 +120,6 @@ typedef struct {
 
 static lcd_dma_frame_perf_t s_lcd_dma_frame_perf;
 static const uint8_t *s_lcd_dma_source_frame = 0;
-static uint8_t s_blockOwnerReady = 0U;
-static uint8_t s_fixedMapReady = 0U;
-static uint8_t s_small_area_background_ready = 0U;
-#if LCD_DMA_STAGEP8R6_ACTIVE
-static uint8_t s_blockNearestRowCacheValid = 0U;
-static uint8_t s_blockNearestRowOwner = 0U;
-#endif
 static void lcd_dma_perf_reset_frame(void);
 static void lcd_dma_perf_add_elapsed(uint32_t *accum, uint32_t start_cycle);
 static void lcd_dma_perf_commit_frame(void);
@@ -210,17 +134,6 @@ static uint8_t clamp_to_u8(int32_t value)
         return 255;
     }
     return (uint8_t)value;
-}
-
-static lcd_dma_render_mode_t lcd_dma_render_mode(void)
-{
-#if LCD_DMA_STAGEP8R1_ACTIVE
-    return LCD_DMA_RENDER_MODE_BLOCK_NEAREST;
-#elif LCD_DMA_STAGEP8R4_ACTIVE
-    return LCD_DMA_RENDER_MODE_FIXED_BILINEAR;
-#else
-    return LCD_DMA_RENDER_MODE_LEGACY;
-#endif
 }
 
 static uint16_t lcd_dma_active_line_bytes(void)
@@ -241,27 +154,8 @@ static void lcd_dma_write_rgb565_pixel(uint8_t *buf, uint16_t out_x, uint16_t co
 
 static inline uint16_t lcd_dma_gray_to_output_color(uint8_t pixel)
 {
-#if LCD_DMA_STAGE6_6C_ACTIVE && LCD_DMA_STAGEP8R5_ACTIVE
-    return (uint16_t)(g_colorHighByteLut[pixel] | ((uint16_t)g_colorLowByteLut[pixel] << 8));
-#else
     uint16_t color = GCM_Pseudo3[pixel];
     return (uint16_t)((color >> 8) | (color << 8));
-#endif
-}
-
-static void lcd_dma_fill_run_rgb565(uint16_t *buf16, uint16_t start_x, uint16_t count, uint16_t color)
-{
-    uint16_t i = 0U;
-
-    if (buf16 == 0 || count == 0U)
-    {
-        return;
-    }
-
-    for (i = 0U; i < count; ++i)
-    {
-        buf16[start_x + i] = color;
-    }
 }
 
 static uint8_t lcd_dma_get_oriented_source_pixel(uint8_t source_x, uint8_t source_y)
@@ -382,111 +276,6 @@ static void lcd_dma_perf_commit_frame(void)
     app_perf_baseline_record_lcd_dma_wait_us(s_lcd_dma_frame_perf.dma_wait_us);
     app_perf_baseline_record_lcd_dma_spi_idle_us(s_lcd_dma_frame_perf.spi_idle_wait_us);
     app_perf_baseline_record_lcd_dma_overlay_us(s_lcd_dma_frame_perf.overlay_us);
-}
-
-static void lcd_dma_clear_thermal_background_if_needed(void)
-{
-#if LCD_DMA_STAGEP8R2_ACTIVE
-    if (s_small_area_background_ready == 0U)
-    {
-        LCD_Fill(0U, 0U, (u16)(LCD_W - 1U), (u16)(THERMAL_OUTPUT_ROWS - 1U), BLACK);
-        s_small_area_background_ready = 1U;
-    }
-#else
-    s_small_area_background_ready = 0U;
-#endif
-}
-
-static uint8_t lcd_dma_make_owner_index(uint16_t index, uint16_t output_count, uint16_t source_count)
-{
-    uint32_t owner = 0U;
-
-    if (output_count <= 1U || source_count <= 1U)
-    {
-        return 0U;
-    }
-
-    owner = ((uint32_t)index * (uint32_t)source_count) / (uint32_t)output_count;
-    if (owner >= (uint32_t)source_count)
-    {
-        owner = (uint32_t)(source_count - 1U);
-    }
-
-    return (uint8_t)owner;
-}
-
-static lcd_dma_axis_map_t lcd_dma_make_axis_map(uint16_t index,
-                                                uint16_t output_count,
-                                                uint16_t source_count)
-{
-    lcd_dma_axis_map_t axis = { 0U, 0U, 0U };
-    uint32_t position_q8 = 0U;
-
-    if (output_count <= 1U || source_count <= 1U)
-    {
-        return axis;
-    }
-
-    position_q8 = (((uint32_t)index * (uint32_t)(source_count - 1U)) << 8) /
-                  (uint32_t)(output_count - 1U);
-    axis.index0 = (uint8_t)(position_q8 >> 8);
-    axis.weight1_q8 = (uint16_t)(position_q8 & 0xFFU);
-    axis.index1 = (axis.index0 < (source_count - 1U)) ? (uint8_t)(axis.index0 + 1U) : axis.index0;
-    return axis;
-}
-
-static void lcd_dma_init_block_owner_tables(void)
-{
-    uint16_t out_x = 0U;
-    uint16_t out_y = 0U;
-
-    if (s_blockOwnerReady != 0U)
-    {
-        return;
-    }
-
-    for (out_x = 0U; out_x < LCD_DMA_THERMAL_AREA_WIDTH; ++out_x)
-    {
-        g_blockOwnerX[out_x] = lcd_dma_make_owner_index(out_x,
-                                                        LCD_DMA_THERMAL_AREA_WIDTH,
-                                                        LCD_DMA_ORIENTED_SRC_WIDTH);
-    }
-
-    for (out_y = 0U; out_y < LCD_DMA_THERMAL_AREA_HEIGHT; ++out_y)
-    {
-        g_blockOwnerY[out_y] = lcd_dma_make_owner_index(out_y,
-                                                        LCD_DMA_THERMAL_AREA_HEIGHT,
-                                                        LCD_DMA_ORIENTED_SRC_HEIGHT);
-    }
-
-    s_blockOwnerReady = 1U;
-}
-
-static void lcd_dma_init_fixed_bilinear_maps(void)
-{
-    uint16_t out_x = 0U;
-    uint16_t out_y = 0U;
-
-    if (s_fixedMapReady != 0U)
-    {
-        return;
-    }
-
-    for (out_x = 0U; out_x < LCD_DMA_THERMAL_AREA_WIDTH; ++out_x)
-    {
-        g_fixedXMap[out_x] = lcd_dma_make_axis_map(out_x,
-                                                   LCD_DMA_THERMAL_AREA_WIDTH,
-                                                   LCD_DMA_ORIENTED_SRC_WIDTH);
-    }
-
-    for (out_y = 0U; out_y < LCD_DMA_THERMAL_AREA_HEIGHT; ++out_y)
-    {
-        g_fixedYMap[out_y] = lcd_dma_make_axis_map(out_y,
-                                                   LCD_DMA_THERMAL_AREA_HEIGHT,
-                                                   LCD_DMA_ORIENTED_SRC_HEIGHT);
-    }
-
-    s_fixedMapReady = 1U;
 }
 
 static uint8_t lcd_dma_wait_stream_disabled(void)
@@ -941,95 +730,6 @@ static void build_vertical_edge_rows(void)
     }
 }
 
-static void lcd_dma_render_block_nearest_row(uint16_t out_row, uint8_t *buf)
-{
-    uint16_t *buf16 = (uint16_t *)buf;
-    uint8_t owner_y = 0U;
-
-    if (buf16 == 0 || out_row >= LCD_DMA_THERMAL_AREA_HEIGHT)
-    {
-        return;
-    }
-
-    owner_y = g_blockOwnerY[out_row];
-
-#if LCD_DMA_STAGEP8R6_ACTIVE
-    if (s_blockNearestRowCacheValid != 0U && s_blockNearestRowOwner == owner_y)
-    {
-        memcpy(buf, g_blockNearestRowCache, lcd_dma_active_line_bytes());
-        return;
-    }
-#endif
-
-#if LCD_DMA_STAGEP8R6_ACTIVE
-    {
-        uint16_t out_x = 0U;
-        while (out_x < LCD_DMA_THERMAL_AREA_WIDTH)
-        {
-            uint16_t run_end = (uint16_t)(out_x + 1U);
-            uint8_t owner_x = g_blockOwnerX[out_x];
-            uint16_t color = lcd_dma_gray_to_output_color(lcd_dma_get_oriented_source_pixel(owner_x, owner_y));
-
-            while (run_end < LCD_DMA_THERMAL_AREA_WIDTH && g_blockOwnerX[run_end] == owner_x)
-            {
-                ++run_end;
-            }
-
-            lcd_dma_fill_run_rgb565(buf16, out_x, (uint16_t)(run_end - out_x), color);
-            out_x = run_end;
-        }
-
-        memcpy(g_blockNearestRowCache, buf, lcd_dma_active_line_bytes());
-        s_blockNearestRowCacheValid = 1U;
-        s_blockNearestRowOwner = owner_y;
-    }
-#else
-    for (uint16_t out_x = 0U; out_x < LCD_DMA_THERMAL_AREA_WIDTH; ++out_x)
-    {
-        buf16[out_x] = lcd_dma_gray_to_output_color(
-            lcd_dma_get_oriented_source_pixel(g_blockOwnerX[out_x], owner_y));
-    }
-#endif
-}
-
-static uint8_t lcd_dma_sample_fixed_bilinear_gray(uint16_t out_x, uint16_t out_row)
-{
-    const lcd_dma_axis_map_t *xmap = &g_fixedXMap[out_x];
-    const lcd_dma_axis_map_t *ymap = &g_fixedYMap[out_row];
-    uint32_t wx = xmap->weight1_q8;
-    uint32_t wy = ymap->weight1_q8;
-    uint32_t inv_wx = 256U - wx;
-    uint32_t inv_wy = 256U - wy;
-    uint32_t row0 = 0U;
-    uint32_t row1 = 0U;
-    uint32_t value = 0U;
-    uint8_t p00 = lcd_dma_get_oriented_source_pixel(xmap->index0, ymap->index0);
-    uint8_t p01 = lcd_dma_get_oriented_source_pixel(xmap->index1, ymap->index0);
-    uint8_t p10 = lcd_dma_get_oriented_source_pixel(xmap->index0, ymap->index1);
-    uint8_t p11 = lcd_dma_get_oriented_source_pixel(xmap->index1, ymap->index1);
-
-    row0 = ((uint32_t)p00 * inv_wx) + ((uint32_t)p01 * wx);
-    row1 = ((uint32_t)p10 * inv_wx) + ((uint32_t)p11 * wx);
-    value = (row0 * inv_wy) + (row1 * wy) + 32768U;
-    return (uint8_t)(value >> 16);
-}
-
-static void lcd_dma_render_fixed_bilinear_row(uint16_t out_row, uint8_t *buf)
-{
-    uint16_t *buf16 = (uint16_t *)buf;
-
-    if (buf16 == 0 || out_row >= LCD_DMA_THERMAL_AREA_HEIGHT)
-    {
-        return;
-    }
-
-    for (uint16_t out_x = 0U; out_x < LCD_DMA_THERMAL_AREA_WIDTH; ++out_x)
-    {
-        buf16[out_x] = lcd_dma_gray_to_output_color(
-            lcd_dma_sample_fixed_bilinear_gray(out_x, out_row));
-    }
-}
-
 static void lcd_dma_render_legacy_row(uint16_t out_row, uint8_t *buf)
 {
     uint16_t *buf16 = (uint16_t *)buf;
@@ -1071,20 +771,7 @@ static void render_output_row_to_buffer(uint16_t outRow, uint8_t *buf)
         return;
     }
 
-    switch (lcd_dma_render_mode())
-    {
-    case LCD_DMA_RENDER_MODE_BLOCK_NEAREST:
-        lcd_dma_render_block_nearest_row(outRow, buf);
-        break;
-    case LCD_DMA_RENDER_MODE_FIXED_BILINEAR:
-        lcd_dma_render_fixed_bilinear_row(outRow, buf);
-        break;
-    case LCD_DMA_RENDER_MODE_LEGACY:
-    default:
-        lcd_dma_render_legacy_row(outRow, buf);
-        break;
-    }
-
+    lcd_dma_render_legacy_row(outRow, buf);
     lcd_dma_overlay_crosshair_row(outRow, buf);
 }
 
@@ -1181,13 +868,6 @@ void MYDMA_Config(void)
     s_dma_last_status = APP_PERF_LCD_DMA_STATUS_NONE;
     activeBuffer = 0;
     s_dma_mode = LCD_DMA_MODE_IDLE;
-    s_blockOwnerReady = 0U;
-    s_fixedMapReady = 0U;
-    s_small_area_background_ready = 0U;
-#if LCD_DMA_STAGEP8R6_ACTIVE
-    s_blockNearestRowCacheValid = 0U;
-    s_blockNearestRowOwner = 0U;
-#endif
 #if LCD_DMA_STAGE6_6B_ACTIVE
     s_renderMappingReady = 0U;
     lcd_dma_init_render_mappings();
@@ -1489,10 +1169,6 @@ void color_listcode(uint16_t *color_list,uint16_t mode ){
 	for (i=0;i<256;i++){
         uint16_t color = color_code(i,mode);
 		color_list[i]=color;
-#if LCD_DMA_STAGE6_6C_ACTIVE
-        g_colorHighByteLut[i] = (uint8_t)(color >> 8);
-        g_colorLowByteLut[i] = (uint8_t)(color & 0xFFU);
-#endif
 	}
 }
 /* 设置伪彩色模式并重建 LUT。 */
@@ -1521,26 +1197,8 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
     lcd_dma_init_render_mappings();
 #endif
     s_lcd_dma_source_frame = data24x32;
-#if LCD_DMA_STAGEP8R6_ACTIVE
-    s_blockNearestRowCacheValid = 0U;
-#endif
-
-    switch (lcd_dma_render_mode())
-    {
-    case LCD_DMA_RENDER_MODE_BLOCK_NEAREST:
-        lcd_dma_init_block_owner_tables();
-        break;
-    case LCD_DMA_RENDER_MODE_FIXED_BILINEAR:
-        lcd_dma_init_fixed_bilinear_maps();
-        break;
-    case LCD_DMA_RENDER_MODE_LEGACY:
-    default:
-        build_horizontal_interp_rows(data24x32);
-        build_vertical_edge_rows();
-        break;
-    }
-
-    lcd_dma_clear_thermal_background_if_needed();
+    build_horizontal_interp_rows(data24x32);
+    build_vertical_edge_rows();
 
     LCD_Address_Set((u16)LCD_DMA_THERMAL_AREA_X0,
                     (u16)LCD_DMA_THERMAL_AREA_Y0,
