@@ -116,6 +116,27 @@ static void MLX90640_I2CClearDmaFlags(void)
     DMA_ClearFlag(MLX90640_I2C_RX_DMA_STREAM, MLX90640_I2C_RX_DMA_ALL_FLAGS);
 }
 
+static uint16_t MLX90640_I2CReadDmaNdtr(void)
+{
+    return (uint16_t)DMA_GetCurrDataCounter(MLX90640_I2C_RX_DMA_STREAM);
+}
+
+static void MLX90640_I2CCaptureTimeoutSnapshot(void)
+{
+    app_perf_baseline_record_i2c_dma_timeout_snapshot(MLX90640_I2CReadDmaNdtr(),
+                                                      (uint8_t)s_mlx90640_i2c_dma_ctx.state,
+                                                      I2Cx->SR1,
+                                                      I2Cx->SR2);
+}
+
+static void MLX90640_I2CCaptureTcSnapshot(void)
+{
+    app_perf_baseline_record_i2c_dma_tc_snapshot(MLX90640_I2CReadDmaNdtr(),
+                                                 (uint8_t)s_mlx90640_i2c_dma_ctx.state,
+                                                 I2Cx->SR1,
+                                                 I2Cx->SR2);
+}
+
 static void MLX90640_I2CDrainDoneSemaphore(void)
 {
     if (s_mlx90640_i2c_done_sem == 0)
@@ -527,14 +548,27 @@ static int MLX90640_I2CWaitForDmaCompletion(uint32_t transaction_seq)
         TickType_t elapsed_ticks = now_ticks - start_ticks;
         TickType_t remaining_ticks = 0U;
 
+        if (s_mlx90640_i2c_dma_ctx.completed_seq == transaction_seq)
+        {
+            return 1;
+        }
+
         if (elapsed_ticks >= timeout_ticks)
         {
+            if (s_mlx90640_i2c_dma_ctx.completed_seq == transaction_seq)
+            {
+                return 1;
+            }
             return 0;
         }
 
         remaining_ticks = timeout_ticks - elapsed_ticks;
         if (xSemaphoreTake(s_mlx90640_i2c_done_sem, remaining_ticks) != pdPASS)
         {
+            if (s_mlx90640_i2c_dma_ctx.completed_seq == transaction_seq)
+            {
+                return 1;
+            }
             return 0;
         }
 
@@ -578,11 +612,12 @@ static int MLX90640_I2CReadDmaLocked(uint8_t slaveAddr,
     DMA_SetCurrDataCounter(MLX90640_I2C_RX_DMA_STREAM, byte_count);
 
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
-    I2C_ITConfig(I2Cx, I2C_IT_EVT | I2C_IT_ERR | I2C_IT_BUF, ENABLE);
+    I2C_ITConfig(I2Cx, I2C_IT_EVT | I2C_IT_ERR, ENABLE);
     I2C_GenerateSTART(I2Cx, ENABLE);
 
     if (MLX90640_I2CWaitForDmaCompletion(transaction_seq) == 0)
     {
+        MLX90640_I2CCaptureTimeoutSnapshot();
         app_perf_baseline_record_i2c_transport_error(APP_PERF_I2C_ERROR_TIMEOUT);
         MLX90640_I2CAbortTransferTaskContext();
         return MLX90640_I2C_ERROR_TIMEOUT;
@@ -718,18 +753,18 @@ void MLX90640_I2CInit(void)
 
     NVIC_InitStruct.NVIC_IRQChannel = I2C1_ER_IRQn;
     NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 5;
-    NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStruct.NVIC_IRQChannelSubPriority = 1;
     NVIC_InitStruct.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStruct);
 
     NVIC_InitStruct.NVIC_IRQChannel = I2C1_EV_IRQn;
-    NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 5;
-    NVIC_InitStruct.NVIC_IRQChannelSubPriority = 1;
+    NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 6;
+    NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
     NVIC_Init(&NVIC_InitStruct);
 
     NVIC_InitStruct.NVIC_IRQChannel = MLX90640_I2C_RX_DMA_IRQn;
     NVIC_InitStruct.NVIC_IRQChannelPreemptionPriority = 5;
-    NVIC_InitStruct.NVIC_IRQChannelSubPriority = 2;
+    NVIC_InitStruct.NVIC_IRQChannelSubPriority = 0;
     NVIC_Init(&NVIC_InitStruct);
 }
 
@@ -758,6 +793,8 @@ void I2C1_EV_IRQHandler(void)
     {
         return;
     }
+
+    app_perf_baseline_record_i2c_dma_ev_irq();
 
     if ((s_mlx90640_i2c_dma_ctx.state == MLX90640_I2C_DMA_STATE_START_WRITE) &&
         (I2C_GetITStatus(I2Cx, I2C_IT_SB) != RESET))
@@ -820,6 +857,10 @@ void I2C1_EV_IRQHandler(void)
         I2C_DMACmd(I2Cx, ENABLE);
         dummy = I2Cx->SR2;
         (void)dummy;
+        /* Once DMA RX owns the transfer, keep only ERR enabled.
+         * Leaving EVT/BUF on here can create an IRQ storm with no
+         * matching DMA_RX handler branch and eventually starve DMA TC. */
+        I2C_ITConfig(I2Cx, I2C_IT_EVT | I2C_IT_BUF, DISABLE);
         s_mlx90640_i2c_dma_ctx.state = MLX90640_I2C_DMA_STATE_DMA_RX;
         return;
     }
@@ -874,6 +915,7 @@ void I2C1_ER_IRQHandler(void)
         return;
     }
 
+    MLX90640_I2CCaptureTimeoutSnapshot();
     app_perf_baseline_record_i2c_transport_error(error_kind);
     MLX90640_I2CDmaStopRequestsFromISR();
     MLX90640_I2CDmaSignalDoneFromISR(MLX90640_I2CMapTransportError(error_kind),
@@ -887,6 +929,8 @@ void DMA1_Stream0_IRQHandler(void)
 #if (REDPIC1_MLX90640_I2C_DMA_ENABLE != 0U)
     if (DMA_GetITStatus(MLX90640_I2C_RX_DMA_STREAM, MLX90640_I2C_RX_DMA_TC_FLAG) != RESET)
     {
+        app_perf_baseline_record_i2c_dma_tc_irq();
+        MLX90640_I2CCaptureTcSnapshot();
         DMA_ClearITPendingBit(MLX90640_I2C_RX_DMA_STREAM, MLX90640_I2C_RX_DMA_TC_FLAG);
         I2C_DMACmd(I2Cx, DISABLE);
         I2C_DMALastTransferCmd(I2Cx, DISABLE);
@@ -902,6 +946,7 @@ void DMA1_Stream0_IRQHandler(void)
 
     if (DMA_GetITStatus(MLX90640_I2C_RX_DMA_STREAM, MLX90640_I2C_RX_DMA_TE_FLAG) != RESET)
     {
+        MLX90640_I2CCaptureTimeoutSnapshot();
         DMA_ClearITPendingBit(MLX90640_I2C_RX_DMA_STREAM, MLX90640_I2C_RX_DMA_TE_FLAG);
         app_perf_baseline_record_i2c_transport_error(APP_PERF_I2C_ERROR_DMA_ERR);
         MLX90640_I2CDmaStopRequestsFromISR();

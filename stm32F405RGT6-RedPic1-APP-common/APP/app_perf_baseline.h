@@ -129,6 +129,16 @@ typedef struct
     uint32_t i2c_timeout_count;
     uint32_t i2c_busy_stuck_count;
     uint32_t i2c_dma_err_count;
+    uint32_t i2c_dma_timeout_ndtr;
+    uint32_t i2c_dma_timeout_state;
+    uint32_t i2c_dma_timeout_sr1;
+    uint32_t i2c_dma_timeout_sr2;
+    uint32_t i2c_dma_tc_ndtr;
+    uint32_t i2c_dma_tc_state;
+    uint32_t i2c_dma_tc_sr1;
+    uint32_t i2c_dma_tc_sr2;
+    uint32_t i2c_dma_ev_irq_count;
+    uint32_t i2c_dma_tc_irq_count;
     uint32_t dma_timeout_count;
     uint32_t thermal_backoff_count;
     uint32_t thermal_pair_timeout_count;
@@ -187,6 +197,16 @@ void app_perf_baseline_record_display_queue_fail(void);
 void app_perf_baseline_record_uart_errors(uint32_t flags);
 void app_perf_baseline_record_i2c_failure(void);
 void app_perf_baseline_record_i2c_transport_error(app_perf_i2c_error_t error_kind);
+void app_perf_baseline_record_i2c_dma_timeout_snapshot(uint16_t ndtr,
+                                                       uint8_t state,
+                                                       uint32_t sr1,
+                                                       uint32_t sr2);
+void app_perf_baseline_record_i2c_dma_tc_snapshot(uint16_t ndtr,
+                                                  uint8_t state,
+                                                  uint32_t sr1,
+                                                  uint32_t sr2);
+void app_perf_baseline_record_i2c_dma_ev_irq(void);
+void app_perf_baseline_record_i2c_dma_tc_irq(void);
 void app_perf_baseline_record_thermal_backoff(void);
 void app_perf_baseline_record_thermal_pair_timeout(void);
 void app_perf_baseline_record_thermal_ready_replace(void);

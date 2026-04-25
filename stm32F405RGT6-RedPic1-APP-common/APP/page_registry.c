@@ -341,7 +341,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_ASYNC_TIMEOUT_WIFI_MS  3000UL
 #define PAGE_ASYNC_TIMEOUT_OTA_MS   7000UL
 #define PERF_BASELINE_REFRESH_MS    250UL
-#define PERF_SUBPAGE_COUNT          7U
+#define PERF_SUBPAGE_COUNT          9U
 #define PERF_LABEL_X                12U
 #define PERF_VALUE_X                180U
 #define PERF_TIMING_VALUE_X         106U
@@ -2871,6 +2871,8 @@ static void perf_baseline_draw_layout(uint8_t enabled)
     static const char *s_counter_labels[4] = { "KeyQ Drop", "UIQ Drop", "SvcQ Fail", "UART Err" };
     static const char *s_health_labels[4] = { "Wdg Fault", "Miss Prog", "Therm Act", "Screen" };
     static const char *s_i2c_dma_labels[4] = { "I2C AF", "I2C BERR", "I2C ARLO", "I2C OVR" };
+    static const char *s_i2c_dma_to_diag_labels[4] = { "TO State", "TO NDTR", "TO SR1", "TO SR2" };
+    static const char *s_i2c_dma_tc_diag_labels[4] = { "TC State", "TC NDTR", "TC SR1", "TC SR2" };
     static const char *s_disabled_labels[4] = { "Status", "Switch", "Action", "Scope" };
     const char **labels = s_snapshot_labels;
     uint8_t index = 0U;
@@ -2900,6 +2902,12 @@ static void perf_baseline_draw_layout(uint8_t enabled)
             break;
         case 6U:
             labels = s_i2c_dma_labels;
+            break;
+        case 7U:
+            labels = s_i2c_dma_to_diag_labels;
+            break;
+        case 8U:
+            labels = s_i2c_dma_tc_diag_labels;
             break;
         case 0U:
         default:
@@ -3269,6 +3277,121 @@ static void perf_baseline_draw_i2c_dma_detail(const app_perf_baseline_snapshot_t
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
+static const char *perf_baseline_i2c_dma_state_name(uint32_t state)
+{
+    switch (state)
+    {
+    case 0U:
+        return "IDLE";
+    case 1U:
+        return "STW";
+    case 2U:
+        return "AWR";
+    case 3U:
+        return "MHI";
+    case 4U:
+        return "MLO";
+    case 5U:
+        return "STR";
+    case 6U:
+        return "ARD";
+    case 7U:
+        return "DRX";
+    case 8U:
+        return "DONE";
+    case 9U:
+        return "ERR";
+    default:
+        return "?";
+    }
+}
+
+static void perf_baseline_draw_i2c_dma_timeout_diag(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  perf_baseline_i2c_dma_state_name(snapshot->i2c_dma_timeout_state),
+                                  (snapshot->i2c_dma_timeout_state == 0U) ? DARKBLUE : RED);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_dma_timeout_ndtr);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  value,
+                                  (snapshot->i2c_dma_timeout_ndtr != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "0x%04lX", (unsigned long)(snapshot->i2c_dma_timeout_sr1 & 0xFFFFUL));
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->i2c_dma_timeout_sr1 != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "0x%04lX", (unsigned long)(snapshot->i2c_dma_timeout_sr2 & 0xFFFFUL));
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->i2c_dma_timeout_sr2 != 0U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "EV:%lu TC:%lu",
+             (unsigned long)snapshot->i2c_dma_ev_irq_count,
+             (unsigned long)snapshot->i2c_dma_tc_irq_count);
+    snprintf(footer2,
+             sizeof(footer2),
+             "TMO:%lu BUSY:%lu",
+             (unsigned long)snapshot->i2c_timeout_count,
+             (unsigned long)snapshot->i2c_busy_stuck_count);
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
+static void perf_baseline_draw_i2c_dma_tc_diag(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  perf_baseline_i2c_dma_state_name(snapshot->i2c_dma_tc_state),
+                                  (snapshot->i2c_dma_tc_state == 0U) ? DARKBLUE : RED);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_dma_tc_ndtr);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  value,
+                                  (snapshot->i2c_dma_tc_ndtr != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "0x%04lX", (unsigned long)(snapshot->i2c_dma_tc_sr1 & 0xFFFFUL));
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->i2c_dma_tc_sr1 != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "0x%04lX", (unsigned long)(snapshot->i2c_dma_tc_sr2 & 0xFFFFUL));
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->i2c_dma_tc_sr2 != 0U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "TC:%lu TMO:%lu",
+             (unsigned long)snapshot->i2c_dma_tc_irq_count,
+             (unsigned long)snapshot->i2c_timeout_count);
+    snprintf(footer2,
+             sizeof(footer2),
+             "DMAE:%lu I2:%lu",
+             (unsigned long)snapshot->i2c_dma_err_count,
+             (unsigned long)snapshot->i2c_failure_count);
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
 static void perf_baseline_draw_counters(const app_perf_baseline_snapshot_t *snapshot)
 {
     char value[24];
@@ -3481,6 +3604,12 @@ static void perf_baseline_render(uint8_t full_refresh)
         break;
     case 6U:
         perf_baseline_draw_i2c_dma_detail(&snapshot);
+        break;
+    case 7U:
+        perf_baseline_draw_i2c_dma_timeout_diag(&snapshot);
+        break;
+    case 8U:
+        perf_baseline_draw_i2c_dma_tc_diag(&snapshot);
         break;
     case 0U:
     default:

@@ -48,6 +48,16 @@ static volatile uint32_t s_i2c_ovr_count = 0U;
 static volatile uint32_t s_i2c_timeout_count = 0U;
 static volatile uint32_t s_i2c_busy_stuck_count = 0U;
 static volatile uint32_t s_i2c_dma_err_count = 0U;
+static volatile uint32_t s_i2c_dma_timeout_ndtr = 0U;
+static volatile uint32_t s_i2c_dma_timeout_state = 0U;
+static volatile uint32_t s_i2c_dma_timeout_sr1 = 0U;
+static volatile uint32_t s_i2c_dma_timeout_sr2 = 0U;
+static volatile uint32_t s_i2c_dma_tc_ndtr = 0U;
+static volatile uint32_t s_i2c_dma_tc_state = 0U;
+static volatile uint32_t s_i2c_dma_tc_sr1 = 0U;
+static volatile uint32_t s_i2c_dma_tc_sr2 = 0U;
+static volatile uint32_t s_i2c_dma_ev_irq_count = 0U;
+static volatile uint32_t s_i2c_dma_tc_irq_count = 0U;
 static volatile uint32_t s_dma_timeout_count = 0U;
 static volatile uint32_t s_thermal_backoff_count = 0U;
 static volatile uint32_t s_thermal_pair_timeout_count = 0U;
@@ -206,6 +216,16 @@ void app_perf_baseline_reset(void)
     s_i2c_timeout_count = 0U;
     s_i2c_busy_stuck_count = 0U;
     s_i2c_dma_err_count = 0U;
+    s_i2c_dma_timeout_ndtr = 0U;
+    s_i2c_dma_timeout_state = 0U;
+    s_i2c_dma_timeout_sr1 = 0U;
+    s_i2c_dma_timeout_sr2 = 0U;
+    s_i2c_dma_tc_ndtr = 0U;
+    s_i2c_dma_tc_state = 0U;
+    s_i2c_dma_tc_sr1 = 0U;
+    s_i2c_dma_tc_sr2 = 0U;
+    s_i2c_dma_ev_irq_count = 0U;
+    s_i2c_dma_tc_irq_count = 0U;
     s_dma_timeout_count = 0U;
     s_thermal_backoff_count = 0U;
     s_thermal_pair_timeout_count = 0U;
@@ -586,6 +606,56 @@ void app_perf_baseline_record_i2c_transport_error(app_perf_i2c_error_t error_kin
 #endif
 }
 
+void app_perf_baseline_record_i2c_dma_timeout_snapshot(uint16_t ndtr,
+                                                       uint8_t state,
+                                                       uint32_t sr1,
+                                                       uint32_t sr2)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_dma_timeout_ndtr = (uint32_t)ndtr;
+    s_i2c_dma_timeout_state = (uint32_t)state;
+    s_i2c_dma_timeout_sr1 = sr1;
+    s_i2c_dma_timeout_sr2 = sr2;
+#else
+    (void)ndtr;
+    (void)state;
+    (void)sr1;
+    (void)sr2;
+#endif
+}
+
+void app_perf_baseline_record_i2c_dma_tc_snapshot(uint16_t ndtr,
+                                                  uint8_t state,
+                                                  uint32_t sr1,
+                                                  uint32_t sr2)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_dma_tc_ndtr = (uint32_t)ndtr;
+    s_i2c_dma_tc_state = (uint32_t)state;
+    s_i2c_dma_tc_sr1 = sr1;
+    s_i2c_dma_tc_sr2 = sr2;
+#else
+    (void)ndtr;
+    (void)state;
+    (void)sr1;
+    (void)sr2;
+#endif
+}
+
+void app_perf_baseline_record_i2c_dma_ev_irq(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_dma_ev_irq_count++;
+#endif
+}
+
+void app_perf_baseline_record_i2c_dma_tc_irq(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_dma_tc_irq_count++;
+#endif
+}
+
 void app_perf_baseline_record_thermal_backoff(void)
 {
 #if APP_PERF_BASELINE_ENABLE
@@ -878,6 +948,16 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->i2c_timeout_count = s_i2c_timeout_count;
     snapshot->i2c_busy_stuck_count = s_i2c_busy_stuck_count;
     snapshot->i2c_dma_err_count = s_i2c_dma_err_count;
+    snapshot->i2c_dma_timeout_ndtr = s_i2c_dma_timeout_ndtr;
+    snapshot->i2c_dma_timeout_state = s_i2c_dma_timeout_state;
+    snapshot->i2c_dma_timeout_sr1 = s_i2c_dma_timeout_sr1;
+    snapshot->i2c_dma_timeout_sr2 = s_i2c_dma_timeout_sr2;
+    snapshot->i2c_dma_tc_ndtr = s_i2c_dma_tc_ndtr;
+    snapshot->i2c_dma_tc_state = s_i2c_dma_tc_state;
+    snapshot->i2c_dma_tc_sr1 = s_i2c_dma_tc_sr1;
+    snapshot->i2c_dma_tc_sr2 = s_i2c_dma_tc_sr2;
+    snapshot->i2c_dma_ev_irq_count = s_i2c_dma_ev_irq_count;
+    snapshot->i2c_dma_tc_irq_count = s_i2c_dma_tc_irq_count;
     snapshot->dma_timeout_count = s_dma_timeout_count;
     snapshot->thermal_backoff_count = s_thermal_backoff_count;
     snapshot->thermal_pair_timeout_count = s_thermal_pair_timeout_count;
