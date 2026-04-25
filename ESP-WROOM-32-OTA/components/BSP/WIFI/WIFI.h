@@ -5,6 +5,7 @@
 #include <inttypes.h>
 #include <netdb.h>
 
+#include "freertos/FreeRTOS.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"

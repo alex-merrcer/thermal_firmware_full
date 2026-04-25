@@ -2,11 +2,13 @@
 
 #include "KEY.h"
 #include "UART.h"
+#include "led.h"
 #include "lib_lcd7735.h"
 
 void board_drivers_init(void)
 {
     lcdInit();
+    led_init();
     key_init();
     UART0_Init();
     UART2_Init();

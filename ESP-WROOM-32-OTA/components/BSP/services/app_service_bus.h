@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
 

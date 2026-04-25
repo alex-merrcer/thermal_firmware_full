@@ -827,6 +827,8 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
 void BLUE_Init(void)
 {
+    esp_err_t ret = ESP_OK;
+
     // 释放经典蓝牙内存，仅使用BLE模式
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
 

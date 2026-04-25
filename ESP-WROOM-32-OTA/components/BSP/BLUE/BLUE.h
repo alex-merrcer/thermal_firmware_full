@@ -14,7 +14,6 @@
 #include <string.h>
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
-extern esp_err_t ret;
 extern EventGroupHandle_t xCreatedEventGroup_BlueConnect;
 /* Attributes State Machine */
 enum
