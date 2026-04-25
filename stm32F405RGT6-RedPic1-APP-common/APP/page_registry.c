@@ -3048,6 +3048,7 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
     char footer1[32];
     char footer2[40];
     const char *refresh_state = "16";
+    unsigned long pr_profile = (unsigned long)REDPIC1_THERMAL_STAGEP8R7_TASK_PRIO_PROFILE;
 
     if (snapshot == 0)
     {
@@ -3096,9 +3097,10 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
              ui_renderer_power_state_text(snapshot->power_state));
     snprintf(footer2,
              sizeof(footer2),
-             "Clock:%s R:%s",
+             "Clock:%s R:%s Pr:%lu",
              ui_renderer_clock_profile_text(snapshot->clock_profile),
-             refresh_state);
+             refresh_state,
+             pr_profile);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3107,27 +3109,26 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
     char value[24];
     char overlay[24];
     char footer1[32];
-    char footer2[32];
-    const char *d1_state = "OFF";
-    const char *low_cost_render_state = "OFF";
-    unsigned long stripe_rows = 1UL;
+    char footer2[40];
+    const char *render_mode = "LEG";
+    unsigned long area_width = (unsigned long)LCD_W;
+    unsigned long area_height = (unsigned long)(LCD_H - 20U);
 
     if (snapshot == 0)
     {
         return;
     }
 
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_2_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_3_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_D1_ENABLE != 0U)
-    d1_state = "ON";
-    stripe_rows = (unsigned long)REDPIC1_THERMAL_STAGE6R_D1_STRIPE_ROWS;
+#if (REDPIC1_THERMAL_STAGEP8R1_BLOCK_NEAREST_ENABLE != 0U)
+    render_mode = "BN";
+#elif (REDPIC1_THERMAL_STAGEP8R3_MAP_TABLE_ENABLE != 0U) && \
+      (REDPIC1_THERMAL_STAGEP8R4_FIXED_BILINEAR_ENABLE != 0U)
+    render_mode = "FB";
 #endif
 
-#if (REDPIC1_THERMAL_LOW_COST_RENDER_TEST_ENABLE != 0U)
-    low_cost_render_state = "ON";
+#if (REDPIC1_THERMAL_STAGEP8R2_SMALL_AREA_ENABLE != 0U)
+    area_width = (unsigned long)REDPIC1_THERMAL_STAGEP8R2_AREA_WIDTH;
+    area_height = (unsigned long)REDPIC1_THERMAL_STAGEP8R2_AREA_HEIGHT;
 #endif
 
     perf_baseline_format_triplet(value,
@@ -3171,10 +3172,10 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
     snprintf(footer1, sizeof(footer1), "Ovly %s", overlay);
     snprintf(footer2,
              sizeof(footer2),
-             "D1:%s S:%lu L:%s",
-             d1_state,
-             stripe_rows,
-             low_cost_render_state);
+             "RM:%s A:%lux%lu",
+             render_mode,
+             area_width,
+             area_height);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
