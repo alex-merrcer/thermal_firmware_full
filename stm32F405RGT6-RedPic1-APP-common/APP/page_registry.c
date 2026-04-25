@@ -3046,12 +3046,17 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
 {
     char value[24];
     char footer1[32];
-    char footer2[32];
+    char footer2[40];
+    const char *refresh_state = "16";
 
     if (snapshot == 0)
     {
         return;
     }
+
+#if (REDPIC1_THERMAL_32HZ_AB_TEST_ENABLE != 0U)
+    refresh_state = "32";
+#endif
 
     perf_baseline_format_triplet(value,
                                  sizeof(value),
@@ -3091,8 +3096,9 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
              ui_renderer_power_state_text(snapshot->power_state));
     snprintf(footer2,
              sizeof(footer2),
-             "Clock:%s",
-             ui_renderer_clock_profile_text(snapshot->clock_profile));
+             "Clock:%s R:%s",
+             ui_renderer_clock_profile_text(snapshot->clock_profile),
+             refresh_state);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3103,6 +3109,7 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
     char footer1[32];
     char footer2[32];
     const char *d1_state = "OFF";
+    const char *low_cost_render_state = "OFF";
     unsigned long stripe_rows = 1UL;
 
     if (snapshot == 0)
@@ -3117,6 +3124,10 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
     (REDPIC1_THERMAL_STAGE6R_D1_ENABLE != 0U)
     d1_state = "ON";
     stripe_rows = (unsigned long)REDPIC1_THERMAL_STAGE6R_D1_STRIPE_ROWS;
+#endif
+
+#if (REDPIC1_THERMAL_LOW_COST_RENDER_TEST_ENABLE != 0U)
+    low_cost_render_state = "ON";
 #endif
 
     perf_baseline_format_triplet(value,
@@ -3158,7 +3169,12 @@ static void perf_baseline_draw_lcd_dma_detail(const app_perf_baseline_snapshot_t
                                  snapshot->lcd_dma_overlay_max_us,
                                  (snapshot->lcd_dma_overlay_samples != 0U) ? 1U : 0U);
     snprintf(footer1, sizeof(footer1), "Ovly %s", overlay);
-    snprintf(footer2, sizeof(footer2), "6R-D1:%s S:%lu", d1_state, stripe_rows);
+    snprintf(footer2,
+             sizeof(footer2),
+             "D1:%s S:%lu L:%s",
+             d1_state,
+             stripe_rows,
+             low_cost_render_state);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3193,13 +3209,20 @@ static void perf_baseline_draw_thermal_flow_detail(const app_perf_baseline_snaps
                                   value,
                                   (snapshot->thermal_3d_done_cancel_count != 0U) ? RED : DARKBLUE);
 
-    snprintf(footer1,
-             sizeof(footer1),
-             "Done O/E %lu/%lu",
-             (unsigned long)snapshot->thermal_3d_done_ok_count,
-             (unsigned long)snapshot->thermal_3d_done_error_count);
+    perf_baseline_format_triplet(footer1,
+                                 sizeof(footer1),
+                                 snapshot->thermal_display_age_last_ms,
+                                 snapshot->thermal_display_age_avg_ms,
+                                 snapshot->thermal_display_age_max_ms,
+                                 (snapshot->thermal_display_age_samples != 0U) ? 1U : 0U);
     snprintf(footer2,
              sizeof(footer2),
+             "Age %s D %lu/%lu",
+             footer1,
+             (unsigned long)snapshot->thermal_3d_done_ok_count,
+             (unsigned long)snapshot->thermal_3d_done_error_count);
+    snprintf(footer1,
+             sizeof(footer1),
              "3D:%lu/%lu/%lu W:%lu",
              (unsigned long)snapshot->thermal_3d_sync_present_attempt_count,
              (unsigned long)snapshot->thermal_3d_sync_present_ok_count,

@@ -1,0 +1,58 @@
+<view class="page-shell device-page">
+  <view class="panel device-hero">
+    <view class="device-hero-top">
+      <view>
+        <view class="section-title">设备信息</view>
+        <view class="device-name">{{device.displayName}}</view>
+        <view class="section-subtitle">{{device.modelText}}</view>
+      </view>
+      <view class="status-pill {{device.online.tone}}">{{device.online.text}}</view>
+    </view>
+    <view class="device-meta">最近上报 {{device.latestUpdateText}}</view>
+    <view class="device-note">{{device.latestUpdateRelativeText}} · 最近同步 {{device.fetchedAtText}}</view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">真实链路信息</view>
+    <view class="section-subtitle">以下字段直接来自当前 STM32 / ESP32 / 阿里云 IoT / 云函数链路。</view>
+
+    <view class="info-row">
+      <view class="info-key">设备名称</view>
+      <view class="info-value">{{device.displayName}}</view>
+    </view>
+    <view class="info-row">
+      <view class="info-key">设备状态</view>
+      <view class="info-value">{{device.online.text}}</view>
+    </view>
+    <view class="info-row">
+      <view class="info-key">最近上报时间</view>
+      <view class="info-value">{{device.latestUpdateText}}</view>
+    </view>
+    <view class="info-row">
+      <view class="info-key">产品型号</view>
+      <view class="info-value">{{device.modelText}}</view>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">待接入能力</view>
+    <view class="section-subtitle">本轮不伪造数据，未上云的能力统一保持待接入状态。</view>
+
+    <view class="capability-item" wx:for="{{pendingCapabilities}}" wx:key="key">
+      <view class="capability-copy">
+        <view class="capability-title">{{item.title}}</view>
+        <view class="capability-desc">{{item.description}}</view>
+      </view>
+      <view class="status-pill disabled">待接入云端</view>
+    </view>
+  </view>
+
+  <button class="primary-button" bindtap="onRefreshTap" loading="{{loading}}">
+    {{loading ? "正在刷新..." : "刷新设备状态"}}
+  </button>
+
+  <view class="error-card" wx:if="{{errorMessage}}">
+    <view class="error-title">设备信息加载失败</view>
+    <view class="error-text">{{errorMessage}}</view>
+  </view>
+</view>

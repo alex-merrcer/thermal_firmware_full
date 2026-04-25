@@ -1,0 +1,51 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/history/index",
+    "pages/device/index",
+    "pages/settings/index",
+    "pages/debug/index"
+  ],
+  "window": {
+    "backgroundColor": "#F3F1EA",
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#F3F1EA",
+    "navigationBarTitleText": "热成像监测",
+    "navigationBarTextStyle": "black"
+  },
+  "tabBar": {
+    "color": "#7A776B",
+    "selectedColor": "#A24B2A",
+    "backgroundColor": "#FFFCF6",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页",
+        "iconPath": "images/icons/home.png",
+        "selectedIconPath": "images/icons/home-active.png"
+      },
+      {
+        "pagePath": "pages/history/index",
+        "text": "历史",
+        "iconPath": "images/icons/business.png",
+        "selectedIconPath": "images/icons/business-active.png"
+      },
+      {
+        "pagePath": "pages/device/index",
+        "text": "设备",
+        "iconPath": "images/icons/goods.png",
+        "selectedIconPath": "images/icons/goods-active.png"
+      },
+      {
+        "pagePath": "pages/settings/index",
+        "text": "设置",
+        "iconPath": "images/icons/usercenter.png",
+        "selectedIconPath": "images/icons/usercenter-active.png"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents"
+}

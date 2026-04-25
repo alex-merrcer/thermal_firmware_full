@@ -1,0 +1,67 @@
+.device-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.device-hero {
+  background:
+    linear-gradient(145deg, rgba(255, 250, 241, 0.98), rgba(246, 238, 226, 0.94)),
+    #fffaf1;
+}
+
+.device-hero-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  align-items: flex-start;
+}
+
+.device-name {
+  margin-top: 18rpx;
+  font-size: 42rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #241b15;
+}
+
+.device-meta {
+  margin-top: 24rpx;
+  font-size: 25rpx;
+  color: #4e3c31;
+}
+
+.device-note {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  color: #8b7d70;
+}
+
+.capability-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 22rpx 0;
+  border-top: 1rpx solid rgba(36, 27, 21, 0.08);
+}
+
+.capability-item:first-of-type {
+  margin-top: 12rpx;
+}
+
+.capability-copy {
+  flex: 1;
+}
+
+.capability-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #241b15;
+}
+
+.capability-desc {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  line-height: 1.7;
+  color: #7e7165;
+}

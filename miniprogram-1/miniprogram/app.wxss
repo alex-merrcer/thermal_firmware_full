@@ -1,0 +1,191 @@
+page {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top, #fdf4dd 0%, #f3f1ea 35%, #ece8e0 100%);
+  color: #241b15;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.container {
+  box-sizing: border-box;
+}
+
+button {
+  border: none;
+}
+
+button::after {
+  border: none;
+}
+
+.page-shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 28rpx 28rpx 42rpx;
+}
+
+.panel {
+  background: rgba(255, 252, 246, 0.94);
+  border-radius: 28rpx;
+  padding: 28rpx;
+  box-shadow: 0 18rpx 36rpx rgba(53, 36, 22, 0.08);
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #241b15;
+}
+
+.section-subtitle {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #786d63;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 18rpx 0;
+  border-top: 1rpx solid rgba(36, 27, 21, 0.08);
+}
+
+.info-row:first-child {
+  border-top: none;
+}
+
+.info-key {
+  flex: 0 0 220rpx;
+  font-size: 25rpx;
+  color: #72685d;
+}
+
+.info-value {
+  flex: 1;
+  font-size: 25rpx;
+  color: #241b15;
+  text-align: right;
+  word-break: break-all;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52rpx;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.status-pill.online {
+  background: rgba(47, 143, 79, 0.12);
+  color: #2f8f4f;
+}
+
+.status-pill.normal {
+  background: rgba(47, 143, 79, 0.12);
+  color: #2f8f4f;
+}
+
+.status-pill.offline {
+  background: rgba(117, 94, 78, 0.12);
+  color: #755e4e;
+}
+
+.status-pill.warning {
+  background: rgba(232, 150, 37, 0.14);
+  color: #c2711f;
+}
+
+.status-pill.alert {
+  background: rgba(201, 84, 56, 0.14);
+  color: #b34225;
+}
+
+.status-pill.pending {
+  background: rgba(86, 109, 167, 0.14);
+  color: #506aa0;
+}
+
+.status-pill.disabled {
+  background: rgba(120, 109, 98, 0.12);
+  color: #7c7369;
+}
+
+.primary-button,
+.secondary-button {
+  height: 88rpx;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #241710, #8a3f23);
+  color: #fff7ef;
+  box-shadow: 0 18rpx 30rpx rgba(33, 22, 15, 0.16);
+}
+
+.secondary-button {
+  background: rgba(255, 252, 246, 0.92);
+  color: #624736;
+  border: 1rpx solid rgba(98, 71, 54, 0.12);
+}
+
+.secondary-button.disabled {
+  color: #a29a90;
+  background: rgba(244, 240, 235, 0.95);
+}
+
+.error-card,
+.empty-card {
+  border-radius: 24rpx;
+  padding: 24rpx 26rpx;
+}
+
+.error-card {
+  background: rgba(255, 241, 236, 0.98);
+  color: #8c442d;
+}
+
+.empty-card {
+  background: rgba(248, 244, 238, 0.95);
+  color: #74685c;
+}
+
+.error-title,
+.empty-title {
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.error-text,
+.empty-text {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+}
+
+.status-panel.normal {
+  border: 1rpx solid rgba(51, 135, 83, 0.08);
+}
+
+.status-panel.warning {
+  border: 1rpx solid rgba(194, 113, 31, 0.12);
+}
+
+.status-panel.alert {
+  border: 1rpx solid rgba(179, 66, 37, 0.12);
+}
+
+.status-panel.pending,
+.status-panel.offline {
+  border: 1rpx solid rgba(117, 94, 78, 0.1);
+}

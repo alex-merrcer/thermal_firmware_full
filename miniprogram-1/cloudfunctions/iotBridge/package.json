@@ -1,0 +1,14 @@
+{
+  "name": "iotBridge",
+  "version": "1.0.0",
+  "description": "WeChat cloud function bridge for Alibaba Cloud IoT thermal data",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests configured\""
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "wx-server-sdk": "~2.4.0"
+  }
+}

@@ -1,0 +1,103 @@
+<view class="page-shell settings-page">
+  <view class="panel">
+    <view class="section-title">基础设置</view>
+    <view class="section-subtitle">温度单位、自动刷新和刷新频率都保存在本地设置中。</view>
+
+    <picker range="{{unitOptions}}" value="{{unitIndex}}" bindchange="onUnitChange">
+      <view class="setting-row">
+        <view class="setting-copy">
+          <view class="setting-title">温度单位</view>
+          <view class="setting-desc">首页和历史页都会按当前单位显示</view>
+        </view>
+        <view class="setting-value">{{currentUnitLabel}}</view>
+      </view>
+    </picker>
+
+    <view class="setting-row">
+      <view class="setting-copy">
+        <view class="setting-title">自动刷新</view>
+        <view class="setting-desc">返回首页后按设定频率自动拉取最新快照</view>
+      </view>
+      <switch checked="{{autoRefreshEnabled}}" color="#A24B2A" bindchange="onAutoRefreshChange" />
+    </view>
+
+    <picker range="{{intervalOptions}}" value="{{intervalIndex}}" bindchange="onIntervalChange">
+      <view class="setting-row">
+        <view class="setting-copy">
+          <view class="setting-title">自动刷新间隔</view>
+          <view class="setting-desc">当前支持 5 / 10 / 15 / 30 / 60 秒</view>
+        </view>
+        <view class="setting-value">{{currentIntervalLabel}}</view>
+      </view>
+    </picker>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">报警阈值</view>
+    <view class="section-subtitle">首页会用最高温和这个阈值判断“正常 / 偏高 / 报警”。</view>
+
+    <view class="input-label">报警阈值（°C）</view>
+    <input
+      class="setting-input"
+      type="digit"
+      value="{{thresholdInput}}"
+      bindinput="onThresholdInput"
+      placeholder="请输入报警阈值"
+    />
+
+    <view class="button-row">
+      <button class="primary-button" bindtap="onSaveThresholdTap">保存阈值</button>
+      <button class="secondary-button" bindtap="onResetThresholdTap">恢复默认</button>
+    </view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">设备备注名</view>
+    <view class="section-subtitle">通过阿里云设备备注名接口真实更新，首页和设备页会同步显示。</view>
+
+    <view class="device-summary">
+      <view>
+        <view class="device-name">{{deviceDisplayName}}</view>
+        <view class="device-status">当前设备状态</view>
+      </view>
+      <view class="status-pill {{onlineStatus.tone}}">{{onlineStatus.text}}</view>
+    </view>
+
+    <view class="input-label">设备备注名</view>
+    <input
+      class="setting-input"
+      value="{{nicknameInput}}"
+      bindinput="onNicknameInput"
+      maxlength="32"
+      placeholder="请输入 4-32 个字符"
+    />
+
+    <button class="primary-button" bindtap="onSaveNicknameTap" loading="{{savingNickname}}">
+      {{savingNickname ? "正在保存..." : "保存设备名称"}}
+    </button>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">待接入功能</view>
+    <view class="section-subtitle">这部分本轮只保留入口说明，不展示伪数据。</view>
+
+    <view class="placeholder-item" wx:for="{{placeholderItems}}" wx:key="key">
+      <view class="setting-copy">
+        <view class="setting-title">{{item.title}}</view>
+        <view class="setting-desc">{{item.description}}</view>
+      </view>
+      <view class="status-pill disabled">待接入</view>
+    </view>
+  </view>
+
+  <view class="panel version-card" bindtap="onVersionTap">
+    <view class="section-title">版本与调试</view>
+    <view class="section-subtitle">当前版本 {{versionText}}</view>
+    <view class="version-hint">{{debugHintText}}</view>
+  </view>
+
+  <view class="error-card" wx:if="{{errorMessage}}">
+    <view class="error-title">设置操作未完成</view>
+    <view class="error-text">{{errorMessage}}</view>
+  </view>
+</view>

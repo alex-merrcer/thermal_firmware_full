@@ -1,0 +1,80 @@
+<view class="page-shell history-page">
+  <view class="panel">
+    <view class="section-title">{{metricLabel}}趋势</view>
+    <view class="section-subtitle">{{rangeLabel}}，支持按指标和时间范围切换查看。</view>
+
+    <view class="chip-row">
+      <view
+        wx:for="{{metricOptions}}"
+        wx:key="value"
+        class="filter-chip {{item.active ? 'active' : ''}}"
+        data-metric="{{item.value}}"
+        bindtap="onMetricTap"
+      >
+        {{item.label}}
+      </view>
+    </view>
+
+    <view class="chip-row compact">
+      <view
+        wx:for="{{rangeOptions}}"
+        wx:key="value"
+        class="filter-chip compact-chip {{item.active ? 'active' : ''}}"
+        data-range="{{item.value}}"
+        bindtap="onRangeTap"
+      >
+        {{item.label}}
+      </view>
+    </view>
+  </view>
+
+  <view class="panel chart-panel">
+    <view class="chart-head">
+      <view>
+        <view class="chart-value">{{latestValueText}}<text class="chart-unit">{{unitLabel}}</text></view>
+        <view class="chart-note">最近一次 {{metricLabel}} · 数据拉取 {{updatedAtText}}</view>
+      </view>
+      <button class="secondary-button refresh-button" bindtap="onRefreshTap" loading="{{loading}}">
+        刷新
+      </button>
+    </view>
+
+    <canvas
+      wx:if="{{hasData}}"
+      canvas-id="historyCanvas"
+      class="history-canvas"
+      style="width: {{chartWidth}}px; height: {{chartHeight}}px;"
+      width="{{chartWidth}}"
+      height="{{chartHeight}}"
+    ></canvas>
+
+    <view class="empty-card" wx:else>
+      <view class="empty-title">暂无趋势数据</view>
+      <view class="empty-text">{{emptyText}}</view>
+    </view>
+  </view>
+
+  <view class="stats-grid">
+    <view class="panel stats-card">
+      <view class="stats-label">最新值</view>
+      <view class="stats-value">{{latestValueText}}</view>
+    </view>
+    <view class="panel stats-card">
+      <view class="stats-label">区间最低</view>
+      <view class="stats-value">{{minValueText}}</view>
+    </view>
+    <view class="panel stats-card">
+      <view class="stats-label">区间最高</view>
+      <view class="stats-value">{{maxValueText}}</view>
+    </view>
+    <view class="panel stats-card">
+      <view class="stats-label">样本点数</view>
+      <view class="stats-value">{{sampleCountText}}</view>
+    </view>
+  </view>
+
+  <view class="error-card" wx:if="{{errorMessage}}">
+    <view class="error-title">历史数据加载失败</view>
+    <view class="error-text">{{errorMessage}}</view>
+  </view>
+</view>

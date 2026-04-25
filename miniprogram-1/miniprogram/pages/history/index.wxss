@@ -1,0 +1,103 @@
+.history-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.chip-row {
+  margin-top: 22rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+}
+
+.filter-chip {
+  min-width: 150rpx;
+  padding: 16rpx 24rpx;
+  border-radius: 999rpx;
+  background: rgba(239, 233, 224, 0.84);
+  color: #6f6258;
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.filter-chip.active {
+  background: linear-gradient(135deg, #281710, #a44c2a);
+  color: #fff7ef;
+  box-shadow: 0 12rpx 24rpx rgba(37, 24, 16, 0.14);
+}
+
+.compact {
+  margin-top: 14rpx;
+}
+
+.compact-chip {
+  min-width: 120rpx;
+}
+
+.chart-panel {
+  overflow: hidden;
+}
+
+.chart-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  align-items: flex-start;
+}
+
+.chart-value {
+  font-size: 58rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #231711;
+}
+
+.chart-unit {
+  margin-left: 10rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #8b796c;
+}
+
+.chart-note {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #7a6b5f;
+}
+
+.refresh-button {
+  min-width: 140rpx;
+  height: 74rpx;
+  font-size: 24rpx;
+}
+
+.history-canvas {
+  margin-top: 24rpx;
+  border-radius: 24rpx;
+  background: #fffcf6;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.stats-card {
+  padding-top: 26rpx;
+  padding-bottom: 26rpx;
+}
+
+.stats-label {
+  font-size: 23rpx;
+  color: #7d6f62;
+}
+
+.stats-value {
+  margin-top: 14rpx;
+  font-size: 42rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #221710;
+}

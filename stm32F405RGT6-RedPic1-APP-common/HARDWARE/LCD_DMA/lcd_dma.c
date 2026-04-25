@@ -52,6 +52,12 @@
     #define LCD_DMA_THERMAL_STRIPE_ROWS 1U
 #endif
 
+#if (REDPIC1_THERMAL_LOW_COST_RENDER_TEST_ENABLE != 0U)
+    #define LCD_DMA_LOW_COST_RENDER_TEST_ACTIVE 1U
+#else
+    #define LCD_DMA_LOW_COST_RENDER_TEST_ACTIVE 0U
+#endif
+
 #define LCD_DMA_THERMAL_STRIPE_BUF_SIZE (LINE_BUF_SIZE * LCD_DMA_THERMAL_STRIPE_ROWS)
 
 /* 双行缓存必须留在系统 SRAM，避免被链接到 DMA 不可达的 CCRAM。 */
@@ -109,6 +115,7 @@ typedef struct {
 } lcd_dma_frame_perf_t;
 
 static lcd_dma_frame_perf_t s_lcd_dma_frame_perf;
+static const uint8_t *s_lcd_dma_source_frame = 0;
 static void lcd_dma_perf_reset_frame(void);
 static void lcd_dma_perf_add_elapsed(uint32_t *accum, uint32_t start_cycle);
 static void lcd_dma_perf_commit_frame(void);
@@ -670,6 +677,62 @@ static void build_vertical_edge_rows(void)
     }
 }
 
+#if LCD_DMA_LOW_COST_RENDER_TEST_ACTIVE
+static uint16_t lcd_dma_interp_coord_to_src_index(uint16_t interp_coord,
+                                                  uint16_t first_anchor,
+                                                  uint16_t max_src_index)
+{
+    uint16_t last_anchor = (uint16_t)(first_anchor + (max_src_index * INTERP_STRIDE));
+
+    if (interp_coord <= first_anchor)
+    {
+        return 0U;
+    }
+
+    if (interp_coord >= last_anchor)
+    {
+        return max_src_index;
+    }
+
+    return (uint16_t)(((interp_coord - first_anchor) + (INTERP_STRIDE / 2U)) / INTERP_STRIDE);
+}
+
+static uint8_t lcd_dma_sample_low_cost_gray(uint16_t out_x, uint16_t out_row)
+{
+    uint16_t interp_row = 0U;
+    uint16_t interp_col = 0U;
+    uint16_t src_row = 0U;
+    uint16_t src_col = 0U;
+
+    if (s_lcd_dma_source_frame == 0 ||
+        out_x >= LCD_W ||
+        out_row >= THERMAL_OUTPUT_ROWS)
+    {
+        return 0U;
+    }
+
+#if LCD_DMA_STAGE6_6B_ACTIVE && (USE_HORIZONTAL==0 || USE_HORIZONTAL==1)
+    interp_row = g_outputRowToInterpRow[out_row];
+    interp_col = g_outputColToInterpCol[out_x];
+#elif LCD_DMA_STAGE6_6B_ACTIVE
+    interp_row = g_outputColToInterpRow[out_x];
+    interp_col = g_outputRowToInterpCol[out_row];
+#else
+    interp_row = lcd_dma_scale_axis(out_row, THERMAL_OUTPUT_ROWS, THERMAL_RENDER_HEIGHT);
+    interp_col = lcd_dma_scale_axis(out_x, LCD_W, THERMAL_RENDER_WIDTH);
+#endif
+
+    src_row = lcd_dma_interp_coord_to_src_index(interp_row,
+                                                TOP_EDGE_ROWS,
+                                                (uint16_t)(THERMAL_SRC_HEIGHT - 1U));
+    src_col = lcd_dma_interp_coord_to_src_index(interp_col,
+                                                TOP_EDGE_ROWS,
+                                                (uint16_t)(THERMAL_SRC_WIDTH - 1U));
+
+    return s_lcd_dma_source_frame[((uint32_t)src_row * THERMAL_SRC_WIDTH) + src_col];
+}
+#endif
+
 /* 生成指定输出行的 RGB565 数据。 */
 static void render_output_row_to_buffer(uint16_t outRow, uint8_t *buf)
 {
@@ -691,7 +754,17 @@ static void render_output_row_to_buffer(uint16_t outRow, uint8_t *buf)
     /* 保留 16位指针写入，榨干总线性能 */
     uint16_t *buf16 = (uint16_t *)buf;
 
-#if LCD_DMA_STAGE6_6B_ACTIVE && (USE_HORIZONTAL==0 || USE_HORIZONTAL==1)
+#if LCD_DMA_LOW_COST_RENDER_TEST_ACTIVE
+    for (uint16_t outX = 0U; outX < LCD_W; outX++) {
+        uint8_t pixel = lcd_dma_sample_low_cost_gray(outX, outRow);
+#if LCD_DMA_STAGE6_6C_ACTIVE
+        buf16[outX] = (uint16_t)(g_colorHighByteLut[pixel] | (g_colorLowByteLut[pixel] << 8));
+#else
+        uint16_t color = GCM_Pseudo3[pixel];
+        buf16[outX] = (uint16_t)((color >> 8) | (color << 8));
+#endif
+    }
+#elif LCD_DMA_STAGE6_6B_ACTIVE && (USE_HORIZONTAL==0 || USE_HORIZONTAL==1)
     const lcd_dma_interp_row_meta_t *row_meta = &g_interpRowMeta[g_outputRowToInterpRow[outRow]];
 
     for (uint16_t outX = 0U; outX < LCD_W; outX++) {
@@ -1166,8 +1239,11 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
 #if LCD_DMA_STAGE6_6B_ACTIVE
     lcd_dma_init_render_mappings();
 #endif
+    s_lcd_dma_source_frame = data24x32;
+#if (LCD_DMA_LOW_COST_RENDER_TEST_ACTIVE == 0U)
     build_horizontal_interp_rows(data24x32);
     build_vertical_edge_rows();
+#endif
 
     LCD_Address_Set(0, 0, (u16)(LCD_W - 1), (u16)(THERMAL_OUTPUT_ROWS - 1U));
     LCD_DC_Set();
@@ -1180,6 +1256,7 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
         LCD_CS_Set();
         s_dma_mode = LCD_DMA_MODE_IDLE;
         lcd_dma_perf_commit_frame();
+        s_lcd_dma_source_frame = 0;
         app_perf_baseline_record_lcd_dma_result(app_perf_baseline_elapsed_us(start_cycle),
                                                 s_dma_last_status);
         return 0U;
@@ -1196,6 +1273,7 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
             LCD_CS_Set();
             s_dma_mode = LCD_DMA_MODE_IDLE;
             lcd_dma_perf_commit_frame();
+            s_lcd_dma_source_frame = 0;
             app_perf_baseline_record_lcd_dma_result(app_perf_baseline_elapsed_us(start_cycle),
                                                     s_dma_last_status);
             return 0U;
@@ -1208,6 +1286,7 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
             LCD_CS_Set();
             s_dma_mode = LCD_DMA_MODE_IDLE;
             lcd_dma_perf_commit_frame();
+            s_lcd_dma_source_frame = 0;
             app_perf_baseline_record_lcd_dma_result(app_perf_baseline_elapsed_us(start_cycle),
                                                     s_dma_last_status);
             return 0U;
@@ -1220,6 +1299,7 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
         LCD_CS_Set();
         s_dma_mode = LCD_DMA_MODE_IDLE;
         lcd_dma_perf_commit_frame();
+        s_lcd_dma_source_frame = 0;
         app_perf_baseline_record_lcd_dma_result(app_perf_baseline_elapsed_us(start_cycle),
                                                 s_dma_last_status);
         return 0U;
@@ -1228,6 +1308,7 @@ uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32)
     LCD_CS_Set();
     s_dma_mode = LCD_DMA_MODE_IDLE;
     lcd_dma_perf_commit_frame();
+    s_lcd_dma_source_frame = 0;
     app_perf_baseline_record_lcd_dma_result(app_perf_baseline_elapsed_us(start_cycle),
                                             APP_PERF_LCD_DMA_STATUS_OK);
     return 1U;

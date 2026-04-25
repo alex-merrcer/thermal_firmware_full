@@ -1,0 +1,154 @@
+.home-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.home-hero {
+  background:
+    linear-gradient(135deg, rgba(255, 146, 72, 0.96), rgba(151, 62, 30, 0.94)),
+    #ff8d4a;
+  color: #fff8ef;
+}
+
+.hero-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  align-items: flex-start;
+}
+
+.hero-copy {
+  flex: 1;
+}
+
+.hero-title {
+  font-size: 52rpx;
+  font-weight: 700;
+  line-height: 1.08;
+}
+
+.hero-device {
+  margin-top: 18rpx;
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.hero-subtitle {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: rgba(255, 248, 240, 0.82);
+}
+
+.hero-meta {
+  margin-top: 28rpx;
+  font-size: 26rpx;
+  color: rgba(255, 248, 240, 0.96);
+}
+
+.hero-note {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: rgba(255, 248, 240, 0.76);
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.metric-card {
+  position: relative;
+  overflow: hidden;
+  padding: 28rpx 24rpx;
+  border-radius: 26rpx;
+  background: rgba(255, 252, 246, 0.95);
+  box-shadow: 0 18rpx 36rpx rgba(53, 36, 22, 0.08);
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  right: -24rpx;
+  bottom: -34rpx;
+  width: 132rpx;
+  height: 132rpx;
+  border-radius: 50%;
+  opacity: 0.16;
+}
+
+.metric-card.featured {
+  grid-column: 1 / span 2;
+  padding-top: 34rpx;
+  padding-bottom: 34rpx;
+}
+
+.metric-max::before {
+  background: #f16d34;
+}
+
+.metric-center::before {
+  background: #f0b443;
+}
+
+.metric-min::before {
+  background: #5f8dff;
+}
+
+.metric-label {
+  font-size: 24rpx;
+  color: #7b6758;
+}
+
+.metric-value {
+  margin-top: 18rpx;
+  font-size: 68rpx;
+  font-weight: 700;
+  line-height: 1;
+  color: #231711;
+}
+
+.metric-card:not(.featured) .metric-value {
+  font-size: 54rpx;
+}
+
+.metric-unit {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #8e796b;
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  align-items: flex-start;
+}
+
+.status-title {
+  margin-top: 24rpx;
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #241b15;
+}
+
+.status-description {
+  margin-top: 14rpx;
+  font-size: 25rpx;
+  line-height: 1.7;
+  color: #6f6258;
+}
+
+.status-threshold {
+  margin-top: 18rpx;
+  font-size: 23rpx;
+  color: #8e796b;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16rpx;
+}

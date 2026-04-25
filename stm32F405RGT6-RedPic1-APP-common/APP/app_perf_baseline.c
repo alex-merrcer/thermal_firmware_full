@@ -76,6 +76,7 @@ static volatile UBaseType_t s_thermal_stack_words = 0U;
 static volatile UBaseType_t s_power_stack_words = 0U;
 
 static app_perf_stat_accum_t s_frame_period_stats;
+static app_perf_stat_accum_t s_thermal_display_age_stats;
 static app_perf_stat_accum_t s_get_temp_stats;
 static app_perf_stat_accum_t s_gray_stats;
 static app_perf_stat_accum_t s_thermal_step_stats;
@@ -225,6 +226,7 @@ void app_perf_baseline_reset(void)
     s_power_stack_words = 0U;
 
     app_perf_stat_reset(&s_frame_period_stats);
+    app_perf_stat_reset(&s_thermal_display_age_stats);
     app_perf_stat_reset(&s_get_temp_stats);
     app_perf_stat_reset(&s_gray_stats);
     app_perf_stat_reset(&s_thermal_step_stats);
@@ -323,6 +325,15 @@ void app_perf_baseline_record_thermal_capture_failure(void)
 {
 #if APP_PERF_BASELINE_ENABLE
     s_thermal_capture_failures++;
+#endif
+}
+
+void app_perf_baseline_record_thermal_display_age_ms(uint32_t elapsed_ms)
+{
+#if APP_PERF_BASELINE_ENABLE
+    app_perf_stat_add(&s_thermal_display_age_stats, elapsed_ms);
+#else
+    (void)elapsed_ms;
 #endif
 }
 
@@ -728,6 +739,10 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->thermal_capture_failures = s_thermal_capture_failures;
     snapshot->thermal_fps = s_thermal_fps;
     snapshot->thermal_display_fps = s_thermal_display_fps;
+    snapshot->thermal_display_age_samples = s_thermal_display_age_stats.count;
+    snapshot->thermal_display_age_last_ms = s_thermal_display_age_stats.last;
+    snapshot->thermal_display_age_max_ms = s_thermal_display_age_stats.max;
+    snapshot->thermal_display_age_avg_ms = app_perf_stat_avg(&s_thermal_display_age_stats);
 
     snapshot->thermal_frame_period_samples = s_frame_period_stats.count;
     snapshot->thermal_frame_period_last_ms = s_frame_period_stats.last;

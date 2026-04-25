@@ -67,6 +67,26 @@
     #define REDPIC1_THERMAL_STAGE6L_3_ACTIVE 0U
 #endif
 
+#if (REDPIC1_THERMAL_STAGE6L_2_ACTIVE != 0U)
+    #define REDPIC1_THERMAL_STAGEP5_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_STAGEP5_ACTIVE 0U
+#endif
+
+#if (REDPIC1_THERMAL_STAGE6L_3_ACTIVE != 0U)
+    #define REDPIC1_THERMAL_STAGEP6_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_STAGEP6_ACTIVE 0U
+#endif
+
+#if (REDPIC1_THERMAL_STAGE6L_1_ACTIVE != 0U) && \
+    (REDPIC1_THERMAL_STAGEP5_ACTIVE != 0U) && \
+    (REDPIC1_THERMAL_STAGEP7_ENABLE != 0U)
+    #define REDPIC1_THERMAL_STAGEP7_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_STAGEP7_ACTIVE 0U
+#endif
+
 #if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U)
     #define REDPIC1_THERMAL_STAGE6R_1_ACTIVE 1U
 #else
@@ -127,7 +147,11 @@
 /*  宏定义与常量配置 (Constants & Configuration)                             */
 /* ========================================================================= */
 /* 基础参数 */
-#define REDPIC1_THERMAL_ACTIVE_REFRESH_RATE            RefreshRate  ///< 工作模式帧率宏
+#if (REDPIC1_THERMAL_32HZ_AB_TEST_ENABLE != 0U)
+    #define REDPIC1_THERMAL_ACTIVE_REFRESH_RATE        FPS32HZ
+#else
+    #define REDPIC1_THERMAL_ACTIVE_REFRESH_RATE        RefreshRate
+#endif
 #define REDPIC1_THERMAL_IDLE_REFRESH_RATE              FPS1HZ       ///< 休眠/低功耗模式帧率
 #define REDPIC1_THERMAL_SRC_ROWS                       24U          ///< MLX90640 原始分辨率行数
 #define REDPIC1_THERMAL_SRC_COLS                       32U          ///< MLX90640 原始分辨率列数
@@ -163,8 +187,10 @@
 
 /* 显示窗口平滑策略参数 */
 #define REDPIC1_THERMAL_DISPLAY_WINDOW_MIN_SPAN_C      1.5f         ///< 强制保留的最小显示温差跨度，防止灰度映射失效
-#define REDPIC1_THERMAL_DISPLAY_WINDOW_EMA_ALPHA       0.25f        ///< 指数移动平均 (EMA) 权重系数，值越小越平滑
-#define REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C      0.75f        ///< 单帧窗口最大允许跳变值，抑制画面闪烁
+#define REDPIC1_THERMAL_DISPLAY_WINDOW_EMA_ALPHA       REDPIC1_THERMAL_STAGEP7_NORMAL_EMA_ALPHA
+#define REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C      REDPIC1_THERMAL_STAGEP7_NORMAL_MAX_STEP_C
+#define REDPIC1_THERMAL_DISPLAY_WINDOW_FAST_EMA_ALPHA  REDPIC1_THERMAL_STAGEP7_HIGH_MOTION_EMA_ALPHA
+#define REDPIC1_THERMAL_DISPLAY_WINDOW_FAST_MAX_STEP_C REDPIC1_THERMAL_STAGEP7_HIGH_MOTION_MAX_STEP_C
 
 /* ========================================================================= */
 /*  数据结构定义 (Data Types)                                                */
@@ -540,17 +566,24 @@ static void redpic1_thermal_reset_display_window_state(void)
 
 /* 对显示窗口变化量做限幅。
  * 这样可以保留当前温度窗口平滑策略，不让单帧异常值导致画面剧烈跳变。 */
-static float redpic1_thermal_limit_display_window_step(float current_value, float target_value)
+static float redpic1_thermal_limit_display_window_step(float current_value,
+                                                       float target_value,
+                                                       float max_step_c)
 {
     float delta = target_value - current_value;
 
-    if (delta > REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C)
+    if (max_step_c <= 0.0f)
     {
-        delta = REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C;
+        return target_value;
     }
-    else if (delta < -REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C)
+
+    if (delta > max_step_c)
     {
-        delta = -REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C;
+        delta = max_step_c;
+    }
+    else if (delta < -max_step_c)
+    {
+        delta = -max_step_c;
     }
 
     return current_value + delta;
@@ -585,9 +618,43 @@ static void redpic1_thermal_enforce_display_window_min_span(float *window_min_te
 /* 提取出半跨度的常量，由预编译期计算完成 */
 #define REDPIC1_THERMAL_DISPLAY_WINDOW_HALF_SPAN_C  (REDPIC1_THERMAL_DISPLAY_WINDOW_MIN_SPAN_C * 0.5f)
 
-static void redpic1_thermal_get_display_window(float raw_min_temp,float raw_max_temp,float *out_display_min_temp,float *out_display_max_temp)
+static void redpic1_thermal_get_display_window_response(uint8_t high_motion_frame,
+                                                        float *out_ema_alpha,
+                                                        float *out_max_step_c)
+{
+    float ema_alpha = REDPIC1_THERMAL_DISPLAY_WINDOW_EMA_ALPHA;
+    float max_step_c = REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C;
+
+#if REDPIC1_THERMAL_STAGEP7_ACTIVE
+    if (high_motion_frame != 0U)
+    {
+        ema_alpha = REDPIC1_THERMAL_DISPLAY_WINDOW_FAST_EMA_ALPHA;
+        max_step_c = REDPIC1_THERMAL_DISPLAY_WINDOW_FAST_MAX_STEP_C;
+    }
+#else
+    (void)high_motion_frame;
+#endif
+
+    if (out_ema_alpha != 0)
+    {
+        *out_ema_alpha = ema_alpha;
+    }
+
+    if (out_max_step_c != 0)
+    {
+        *out_max_step_c = max_step_c;
+    }
+}
+
+static void redpic1_thermal_get_display_window(float raw_min_temp,
+                                               float raw_max_temp,
+                                               uint8_t high_motion_frame,
+                                               float *out_display_min_temp,
+                                               float *out_display_max_temp)
 {
 #if REDPIC1_THERMAL_WINDOW_PATH_ENABLED
+    float ema_alpha = REDPIC1_THERMAL_DISPLAY_WINDOW_EMA_ALPHA;
+    float max_step_c = REDPIC1_THERMAL_DISPLAY_WINDOW_MAX_STEP_C;
 
     /* 优化点1：无分支编程 (Branchless)。利用硬件 FPU 的 fmaxf 指令替代 if 判断 */
     float center_temp = (raw_min_temp + raw_max_temp) * 0.5f;
@@ -604,13 +671,21 @@ static void redpic1_thermal_get_display_window(float raw_min_temp,float raw_max_
     }
     else
     {
+        redpic1_thermal_get_display_window_response(high_motion_frame,
+                                                    &ema_alpha,
+                                                    &max_step_c);
+
         // EMA 指数平滑计算
-        float ema_min_temp = s_display_min_temp + ((target_min_temp - s_display_min_temp) * REDPIC1_THERMAL_DISPLAY_WINDOW_EMA_ALPHA);
-        float ema_max_temp = s_display_max_temp + ((target_max_temp - s_display_max_temp) * REDPIC1_THERMAL_DISPLAY_WINDOW_EMA_ALPHA);
+        float ema_min_temp = s_display_min_temp + ((target_min_temp - s_display_min_temp) * ema_alpha);
+        float ema_max_temp = s_display_max_temp + ((target_max_temp - s_display_max_temp) * ema_alpha);
 
         // 步长限幅
-        s_display_min_temp = redpic1_thermal_limit_display_window_step(s_display_min_temp, ema_min_temp);
-        s_display_max_temp = redpic1_thermal_limit_display_window_step(s_display_max_temp, ema_max_temp);
+        s_display_min_temp = redpic1_thermal_limit_display_window_step(s_display_min_temp,
+                                                                       ema_min_temp,
+                                                                       max_step_c);
+        s_display_max_temp = redpic1_thermal_limit_display_window_step(s_display_max_temp,
+                                                                       ema_max_temp,
+                                                                       max_step_c);
 
         /* 优化点2：直接用 FPU 计算抹掉外部函数 redpic1_thermal_enforce_display_window_min_span */
         float cur_center = (s_display_min_temp + s_display_max_temp) * 0.5f;
@@ -632,6 +707,7 @@ static void redpic1_thermal_get_display_window(float raw_min_temp,float raw_max_
     *out_display_max_temp = s_display_max_temp;
 
 #else
+    (void)high_motion_frame;
     *out_display_min_temp = raw_min_temp;
     *out_display_max_temp = raw_max_temp;
 #endif
@@ -654,7 +730,7 @@ static void redpic1_thermal_reset_processing_history(void)
 
 static void redpic1_thermal_stage6l3_invalidate_history(void)
 {
-#if REDPIC1_THERMAL_STAGE6L_3_ACTIVE
+#if REDPIC1_THERMAL_STAGEP6_ACTIVE
     redpic1_thermal_reset_processing_history();
 #endif
 }
@@ -682,7 +758,7 @@ static void redpic1_thermal_stage6l2_adopt_raw_visual_history(const float *raw_f
 
 static uint8_t redpic1_thermal_stage6l3_capture_gap_exceeded(uint32_t capture_tick_ms)
 {
-#if REDPIC1_THERMAL_STAGE6L_3_ACTIVE
+#if REDPIC1_THERMAL_STAGEP6_ACTIVE
     uint32_t active_period_ms = redpic1_thermal_get_active_period_ms();
 
     if (s_last_capture_tick_ms == 0U || active_period_ms == 0U)
@@ -721,7 +797,7 @@ static const float *redpic1_thermal_get_visual_frame(const float *raw_frame_data
         return s_current_visual_temp_frame;
     }
 
-#if REDPIC1_THERMAL_STAGE6L_2_ACTIVE
+#if REDPIC1_THERMAL_STAGEP5_ACTIVE
     {
         float max_abs_delta = 0.0f;
         uint16_t hot_pixel_count = 0U;
@@ -827,7 +903,7 @@ static const float *redpic1_thermal_get_gray_source_frame(const float *raw_frame
  * 固定保留显示窗口平滑、视觉滤波输入和 Stage6_6A 的转置写入路径，保证现有效果不变。 */
 static void redpic1_thermal_prepare_gray_frame(const float *raw_frame_data,
                                                const float *display_frame_data,
-                                               uint8_t use_raw_display_window,
+                                               uint8_t high_motion_frame,
                                                uint8_t *gray_frame,
                                                float *out_min_temp,
                                                float *out_max_temp)
@@ -875,15 +951,27 @@ static void redpic1_thermal_prepare_gray_frame(const float *raw_frame_data,
         return;
     }
 
-    if (use_raw_display_window != 0U)
+#if REDPIC1_THERMAL_STAGEP7_ACTIVE
+    redpic1_thermal_get_display_window(raw_min_temp,
+                                       raw_max_temp,
+                                       high_motion_frame,
+                                       &display_min_temp,
+                                       &display_max_temp);
+#else
+    if (high_motion_frame != 0U)
     {
         display_min_temp = raw_min_temp;
         display_max_temp = raw_max_temp;
     }
     else
     {
-        redpic1_thermal_get_display_window(raw_min_temp,raw_max_temp,&display_min_temp,&display_max_temp);
+        redpic1_thermal_get_display_window(raw_min_temp,
+                                           raw_max_temp,
+                                           0U,
+                                           &display_min_temp,
+                                           &display_max_temp);
     }
+#endif
 
     if (display_max_temp <= display_min_temp)
     {
@@ -1539,7 +1627,10 @@ static void redpic1_thermal_handle_display_done(uintptr_t token,
 {
     uint8_t slot_index = redpic1_thermal_token_slot_index(token);
     uint32_t frame_seq = redpic1_thermal_token_frame_seq(token);
+    uint32_t display_done_tick_ms = power_manager_get_tick_ms();
+    uint32_t display_age_ms = 0U;
     uint8_t note_cancel = 0U;
+    uint8_t note_display_age = 0U;
     uint8_t note_done_ok = 0U;
     uint8_t note_done_error = 0U;
     uint8_t note_done_cancel = 0U;
@@ -1555,6 +1646,12 @@ static void redpic1_thermal_handle_display_done(uintptr_t token,
                 s_frame_slots[slot_index].slot_state == REDPIC1_THERMAL_FRAME_SLOT_INFLIGHT)
             {
                 s_inflight_slot_index = REDPIC1_THERMAL_SLOT_INDEX_NONE;
+                if (s_frame_slots[slot_index].capture_tick_ms != 0U)
+                {
+                    display_age_ms = (uint32_t)(display_done_tick_ms -
+                                                s_frame_slots[slot_index].capture_tick_ms);
+                    note_display_age = 1U;
+                }
                 if (s_runEnabled != 0U)
                 {
                     uint8_t old_front = s_front_slot_index;
@@ -1614,6 +1711,11 @@ static void redpic1_thermal_handle_display_done(uintptr_t token,
     if (note_cancel != 0U)
     {
         app_perf_baseline_record_thermal_display_cancel();
+    }
+
+    if (note_display_age != 0U)
+    {
+        app_perf_baseline_record_thermal_display_age_ms(display_age_ms);
     }
 
     if (note_done_ok != 0U)
@@ -1817,6 +1919,7 @@ void redpic1_thermal_init(void)
     s_runtime_overlay_visible = 1U;
     redpic1_thermal_reset_bottom_bar_cache();
     set_color_mode(s_colorMode);
+    redpic1_thermal_apply_refresh_rate_internal(s_refreshRate, 1U);
 
     redpic1_thermal_reset_processing_history();
     redpic1_thermal_reset_slots();
@@ -1831,7 +1934,7 @@ void redpic1_thermal_bind_display_runtime(void)
 
 uint32_t redpic1_thermal_get_active_period_ms(void)
 {
-    return redpic1_thermal_refresh_rate_to_period_ms(REDPIC1_THERMAL_ACTIVE_REFRESH_RATE);
+    return redpic1_thermal_refresh_rate_to_period_ms(s_refreshRate);
 }
 
 /* thermal task 单步执行入口。
@@ -1860,7 +1963,7 @@ void redpic1_thermal_step(void)
     {
         redpic1_thermal_frame_slot_t *back_slot = 0;
         const float *gray_source_frame = 0;
-        uint8_t use_raw_display_window = 0U;
+        uint8_t high_motion_frame = 0U;
         uint32_t capture_tick_ms = 0U;
         uint32_t now_ms = power_manager_get_tick_ms();
 
@@ -1956,12 +2059,12 @@ void redpic1_thermal_step(void)
         }
 
         gray_source_frame = redpic1_thermal_get_gray_source_frame(back_slot->temp_frame,
-                                                                  &use_raw_display_window);
+                                                                  &high_motion_frame);
 
         gray_start_cycle = app_perf_baseline_cycle_now();
         redpic1_thermal_prepare_gray_frame(back_slot->temp_frame,
                                            gray_source_frame,
-                                           use_raw_display_window,
+                                           high_motion_frame,
                                            back_slot->gray_frame,
                                            &frame_min_temp,
                                            &frame_max_temp);

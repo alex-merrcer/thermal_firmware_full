@@ -43,6 +43,10 @@ typedef struct
     uint32_t thermal_capture_failures;
     uint32_t thermal_fps;
     uint32_t thermal_display_fps;
+    uint32_t thermal_display_age_samples;
+    uint32_t thermal_display_age_last_ms;
+    uint32_t thermal_display_age_max_ms;
+    uint32_t thermal_display_age_avg_ms;
 
     uint32_t thermal_frame_period_samples;
     uint32_t thermal_frame_period_last_ms;
@@ -145,6 +149,7 @@ void app_perf_baseline_record_thermal_capture_success(uint32_t capture_tick_ms,
                                                       float max_temp,
                                                       float center_temp);
 void app_perf_baseline_record_thermal_capture_failure(void);
+void app_perf_baseline_record_thermal_display_age_ms(uint32_t elapsed_ms);
 void app_perf_baseline_record_get_temp_us(uint32_t elapsed_us);
 void app_perf_baseline_record_gray_us(uint32_t elapsed_us);
 void app_perf_baseline_record_thermal_step_us(uint32_t elapsed_us);
