@@ -1,8 +1,12 @@
 set(src_dirs
+            config
+            app
+            drivers
+            protocol
+            services
             LED
             LCD
             WIFI
-            RTOS_DEMO
             IIC
             UART
             HTTP
@@ -14,10 +18,14 @@ set(src_dirs
             )
 
 set(include_dirs
+            app
+            drivers
+            protocol
+            services
+            config
             LED
             LCD
             WIFI
-            RTOS_DEMO
             IIC
             UART
             HTTP
@@ -29,7 +37,6 @@ set(include_dirs
             )
 
 set(requires
-            main
             esp_http_client
             nvs_flash
             esp_partition

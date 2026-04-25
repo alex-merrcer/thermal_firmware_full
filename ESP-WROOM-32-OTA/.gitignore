@@ -1,0 +1,2 @@
+components/BSP/config/app_private_config.h
+components/BSP/OTA_STM32/ota_security_secrets.h

@@ -406,18 +406,19 @@ static int city_name_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         /* 验证城市名称 */
         if (is_english_name(city_name)) {
             strcpy(result_msg, "接收成功");
-            snprintf(dynamic_url, sizeof(dynamic_url), 
-         "http://api.seniverse.com/v3/weather/now.json?key=S8jrGDCAt83JQrLnV&location=%s&language=zh-Hans&unit=c",city_name);
-
-            xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_CONNECTED_BIT);
+            if (app_config_build_weather_now_url(dynamic_url, sizeof(dynamic_url), city_name)) {
+                xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_CONNECTED_BIT);
+            } else {
+                strcpy(result_msg, "天气未配置");
+                xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_FAIL_BIT);
+            }
              
             ESP_LOGI(TAG, "Valid city name received: %s", city_name);
         } else {
             strcpy(result_msg, "名称不对");
             ESP_LOGW(TAG, "Invalid city name: %s", city_name);
-            xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_CONNECTED_BIT);
+            xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_FAIL_BIT);
         }
-        xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_FAIL_BIT);
         /* 发送结果通知 */
         if (result_ind_status && result_chr_conn_handle_inited) {
             ble_gatts_indicate(result_chr_conn_handle, result_chr_val_handle);

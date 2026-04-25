@@ -6,8 +6,8 @@
 #include "ota_stm32_encrypt.h"
 #include "ota_stm32_transfer.h"
 #include "ota_stm32_cache.h"
-#include "host_ctrl_service.h"
 #include "WIFI.h"
+#include "app_service_bus.h"
 
 #define TAG OTA_STM32_TAG
 
@@ -302,10 +302,9 @@ cleanup:
 static void ota_service_task(void *arg)
 {
     (void)arg;
+    QueueHandle_t ota_queue = app_service_bus_ota_frame_queue();
 
     ESP_LOGI(TAG, "OTA service task start");
-    ota_ctrl_flush_uart();
-    host_ctrl_service_init();
 
     while (true) {
         ota_ctrl_frame_t frame = {0};
@@ -316,14 +315,8 @@ static void ota_service_task(void *arg)
         uint8_t req_seq = 0U;
         uint16_t validation_error = 0U;
 
-        host_ctrl_service_step();
-
-        if (!ota_ctrl_receive_frame(&frame, OTA_CTRL_SERVICE_IDLE_MS)) {
-            continue;
-        }
-
-        if (frame.msg_type == OTA_CTRL_MSG_HOST_REQ) {
-            (void)host_ctrl_service_handle_frame(&frame);
+        if (ota_queue == NULL ||
+            xQueueReceive(ota_queue, &frame, pdMS_TO_TICKS(OTA_CTRL_SERVICE_IDLE_MS)) != pdTRUE) {
             continue;
         }
 
@@ -341,6 +334,12 @@ static void ota_service_task(void *arg)
         validation_error = ota_ctrl_validate_request(&request);
         if (validation_error != 0U) {
             ota_ctrl_send_ack(req_seq, &request, false, validation_error);
+            continue;
+        }
+
+        if (!ota_request_is_check_only(&request) && !ota_aes_runtime_ready()) {
+            ESP_LOGW(TAG, "Reject OTA transfer because runtime AES key is not configured");
+            ota_ctrl_send_ack(req_seq, &request, false, OTA_CTRL_ERR_AES);
             continue;
         }
 
@@ -364,7 +363,9 @@ static void ota_service_task(void *arg)
         }
 
         ota_ctrl_send_ack(req_seq, &request, true, 0U);
+        app_service_bus_set_bits(APP_EVENT_OTA_RUNNING);
         ota_process_request(&request, &plan, req_seq, have_cached_plan, cached_package_size);
+        app_service_bus_clear_bits(APP_EVENT_OTA_RUNNING);
     }
 }
 

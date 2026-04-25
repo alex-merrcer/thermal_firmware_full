@@ -116,9 +116,6 @@ void weather_parse(const char *response) {
 
 
 
-#define DEEPSEEK_URL "https://api.deepseek.com/v1/chat/completions"
-#define API_KEY "sk-e201d312132123312341231"  // 替换为实际密钥
-
 // 流式响应处理缓冲区
 static char *stream_buffer = NULL;
 static size_t stream_capacity = 0;
@@ -290,6 +287,21 @@ esp_err_t http_event_handler_stream(esp_http_client_event_t *e) {
 
 void call_deepseek_api(void) 
 {
+        char authorization_header[256];
+
+        if (!app_config_deepseek_is_configured()) {
+            ESP_LOGW(TAG, "DeepSeek API is not configured");
+            return;
+        }
+
+        if (snprintf(authorization_header,
+                     sizeof(authorization_header),
+                     "Bearer %s",
+                     app_config_deepseek_api_key()) <= 0) {
+            ESP_LOGE(TAG, "DeepSeek authorization header build failed");
+            return;
+        }
+
         // 1. 创建JSON请求体 - 启用流式
         cJSON *root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "model", "deepseek-chat");
@@ -308,7 +320,7 @@ void call_deepseek_api(void)
 
         // 2. 配置HTTP客户端
         esp_http_client_config_t config = {
-            .url = DEEPSEEK_URL,
+            .url = app_config_deepseek_api_url(),
             .method = HTTP_METHOD_POST,
             .event_handler = http_event_handler_stream,  // 使用流式处理器
             .transport_type = HTTP_TRANSPORT_OVER_SSL,
@@ -320,7 +332,7 @@ void call_deepseek_api(void)
 
         // 3. 设置请求头
         esp_http_client_set_header(client, "Content-Type", "application/json");
-        esp_http_client_set_header(client, "Authorization", "Bearer " API_KEY);
+        esp_http_client_set_header(client, "Authorization", authorization_header);
         esp_http_client_set_header(client, "Accept", "text/event-stream");  // 重要：声明接受事件流
 
         // 4. 发送请求

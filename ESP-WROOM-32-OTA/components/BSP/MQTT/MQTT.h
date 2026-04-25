@@ -4,20 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "app_config.h"
 #include "esp_err.h"
 #include "mqtt_client.h"
-
-/*
- * Fill the three fields below after you create the device in Alibaba Cloud IoT.
- * The default region is cn-shanghai.
- * For a new public instance or enterprise instance, also fill ALIYUN_IOT_MQTT_HOST.
- */
-#define ALIYUN_IOT_PRODUCT_KEY           "k1jy7ZTTQ8V"
-#define ALIYUN_IOT_DEVICE_NAME           "ESP32-WROOM-32"
-#define ALIYUN_IOT_DEVICE_SECRET         "6d699c5733d561787e8d08acbc807e4c"
-
-#define ALIYUN_IOT_REGION_ID             "cn-shanghai"
-#define ALIYUN_IOT_MQTT_HOST             "iot-06z00fpcn2h806i.mqtt.iothub.aliyuncs.com"
 
 #define ALIYUN_MQTT_ENABLE               1U
 #define ALIYUN_MQTT_USE_TLS              1U
@@ -31,9 +20,9 @@
  * These identifiers must match the TSL property identifiers you create
  * on Alibaba Cloud IoT Platform.
  */
-#define ALIYUN_THERMAL_PROP_MIN_TEMP     "MinTemp"
-#define ALIYUN_THERMAL_PROP_MAX_TEMP     "MaxTemp"
-#define ALIYUN_THERMAL_PROP_CENTER_TEMP  "CenterTemp"
+#define ALIYUN_THERMAL_PROP_MIN_TEMP     APP_THERMAL_PROP_MIN_TEMP
+#define ALIYUN_THERMAL_PROP_MAX_TEMP     APP_THERMAL_PROP_MAX_TEMP
+#define ALIYUN_THERMAL_PROP_CENTER_TEMP  APP_THERMAL_PROP_CENTER_TEMP
 
 #define MQTT_TAG "ALIYUN_MQTT"
 

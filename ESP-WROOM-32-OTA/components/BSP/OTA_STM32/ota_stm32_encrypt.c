@@ -14,7 +14,7 @@
 #define OTA_SECURITY_AES_KEY_ID_TEXT "prod-env-aes256"
 #endif
 #else
-#define OTA_SECURITY_AES_KEY_ID_TEXT "dev-fixed-aes256"
+#define OTA_SECURITY_AES_KEY_ID_TEXT "not-configured"
 #endif
 
 #if defined(OTA_HAS_EXTERNAL_AES_KEY)
@@ -22,10 +22,10 @@ const uint8_t g_ota_aes_key[OTA_AES_KEY_BYTES] = OTA_SECURITY_AES_KEY_BYTES;
 #else
 const uint8_t g_ota_aes_key[OTA_AES_KEY_BYTES] =
 {
-    0x9D, 0xD2, 0x00, 0x24, 0x84, 0x60, 0x2E, 0xDA,
-    0x0C, 0xDD, 0x52, 0x7B, 0x05, 0xC1, 0x6B, 0x01,
-    0xFF, 0x17, 0xCD, 0x6F, 0x8C, 0x1E, 0x3E, 0x09,
-    0xCF, 0x1F, 0x0C, 0x78, 0x87, 0xEF, 0x8A, 0xEC
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 #endif
 
@@ -48,6 +48,21 @@ bool ota_aes_uses_external_key(void)
 #endif
 }
 
+bool ota_aes_runtime_ready(void)
+{
+    if (!ota_aes_uses_external_key()) {
+        return false;
+    }
+
+    for (size_t i = 0U; i < OTA_AES_KEY_BYTES; ++i) {
+        if (g_ota_aes_key[i] != 0U) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 const char *ota_aes_key_id_text(void)
 {
     return OTA_SECURITY_AES_KEY_ID_TEXT;
@@ -55,7 +70,7 @@ const char *ota_aes_key_id_text(void)
 
 void ota_log_aes_security_profile(void)
 {
-    if (ota_aes_uses_external_key()) {
+    if (ota_aes_runtime_ready()) {
         ESP_LOGI(TAG,
                  "OTA AES key source: local ota_security_secrets.h, keyId=%s",
                  ota_aes_key_id_text());
@@ -63,7 +78,7 @@ void ota_log_aes_security_profile(void)
     }
 
     ESP_LOGW(TAG,
-             "OTA AES key source: built-in development fallback, keyId=%s. Add ota_security_secrets.h before production release.",
+             "OTA AES key is not configured. Copy ota_security_secrets.h.example to ota_security_secrets.h and fill a real 32-byte key before enabling OTA transfer. keyId=%s",
              ota_aes_key_id_text());
 }
 

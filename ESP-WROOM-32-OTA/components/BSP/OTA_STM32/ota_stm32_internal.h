@@ -262,6 +262,7 @@ typedef struct
 
 extern const uint8_t g_ota_aes_key[OTA_AES_KEY_BYTES];
 bool ota_aes_uses_external_key(void);
+bool ota_aes_runtime_ready(void);
 const char *ota_aes_key_id_text(void);
 void ota_log_aes_security_profile(void);
 

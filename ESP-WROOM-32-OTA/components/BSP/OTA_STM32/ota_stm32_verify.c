@@ -3,14 +3,13 @@
 
 #define TAG OTA_STM32_TAG
 
-static bool ota_is_development_key_id(const char *key_id)
+static bool ota_is_legacy_key_id(const char *key_id)
 {
     if (key_id == NULL || key_id[0] == '\0') {
         return false;
     }
 
-    return (strcasecmp(key_id, "dev-fixed-aes256") == 0) ||
-           (strcasecmp(key_id, "legacy-fixed-aes256") == 0);
+    return strcasecmp(key_id, "legacy-fixed-aes256") == 0;
 }
 
 static void ota_log_manifest_key_profile(const iap_manifest_t *manifest)
@@ -28,9 +27,9 @@ static void ota_log_manifest_key_profile(const iap_manifest_t *manifest)
         return;
     }
 
-    if (ota_is_development_key_id(manifest->encryption_key_id)) {
+    if (ota_is_legacy_key_id(manifest->encryption_key_id)) {
         ESP_LOGW(TAG,
-                 "Package uses development encryptionKeyId=%s; device keyId=%s",
+                 "Package uses legacy encryptionKeyId=%s; device keyId=%s",
                  manifest->encryption_key_id,
                  device_key_id);
         return;

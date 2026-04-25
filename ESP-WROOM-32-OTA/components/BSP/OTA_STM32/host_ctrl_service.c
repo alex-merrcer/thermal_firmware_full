@@ -5,9 +5,9 @@
 
 #include "BLUE.h"
 #include "KEY.h"
-#include "MQTT.h"
 #include "UART.h"
 #include "WIFI.h"
+#include "cloud_mqtt_service.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "esp_attr.h"
@@ -111,10 +111,10 @@ static void host_ctrl_forward_thermal_snapshot_to_cloud(const uint8_t *payload, 
     max_temp_x10 = host_ctrl_read_i16le(&payload[3]);
     center_temp_x10 = host_ctrl_read_i16le(&payload[5]);
 
-    err = mqtt_service_submit_thermal_snapshot_x10(min_temp_x10, max_temp_x10, center_temp_x10);
+    err = cloud_mqtt_service_submit_thermal_snapshot_x10(min_temp_x10, max_temp_x10, center_temp_x10);
     if (err != ESP_OK)
     {
-        ESP_LOGW(TAG, "Queue thermal snapshot to Alibaba MQTT failed: 0x%04X", (unsigned int)err);
+        ESP_LOGW(TAG, "Queue thermal snapshot to cloud service failed: 0x%04X", (unsigned int)err);
     }
 }
 
@@ -695,7 +695,6 @@ void host_ctrl_service_init(void)
     gpio_hold_dis(LCD_PIN_BL);
     LCD_PanelSleep();
     host_ctrl_restore_deep_ctx(wake_cause);
-    (void)mqtt_service_init();
 
     ESP_LOGI(TAG, "Wake cause=%s", host_ctrl_wakeup_cause_text(wake_cause));
 }
@@ -709,8 +708,6 @@ void host_ctrl_service_step(void)
         s_pending_runtime_apply = 0U;
         host_ctrl_apply_runtime_state();
     }
-
-    mqtt_service_step();
 
     host_ctrl_maybe_enter_sleep();
 

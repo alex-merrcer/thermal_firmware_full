@@ -648,9 +648,13 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             if (is_valid_city_name(received_city)) {
                 const char *msg = "接收城市成功";
                 send_text_notification((uint8_t*)msg, strlen(msg));
-                snprintf(dynamic_url, sizeof(dynamic_url), 
-         "http://api.seniverse.com/v3/weather/now.json?key=S8jrGDCAt83JQrLnV&location=%s&language=zh-Hans&unit=c",received_city);
-            xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_CONNECTED_BIT);
+                if (app_config_build_weather_now_url(dynamic_url, sizeof(dynamic_url), received_city)) {
+                    xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_CONNECTED_BIT);
+                } else {
+                    const char *config_msg = "天气未配置";
+                    send_text_notification((uint8_t*)config_msg, strlen(config_msg));
+                    xEventGroupSetBits(xCreatedEventGroup_BlueConnect, Blue_FAIL_BIT);
+                }
             } 
             else {
                 const char *error_msg = "名称有错";

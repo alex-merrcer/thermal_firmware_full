@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "WIFI.h"
+#include "app_service_bus.h"
 #include "cJSON.h"
 #include "driver/gpio.h"
 #include "esp_event.h"
@@ -21,8 +22,9 @@ typedef struct
     int16_t min_temp_x10;
     int16_t max_temp_x10;
     int16_t center_temp_x10;
-    uint8_t valid;
 } mqtt_thermal_snapshot_t;
+
+#define MQTT_THERMAL_QUEUE_LENGTH 8U
 
 esp_mqtt_client_handle_t client = NULL;
 bool mqtt_connected = false;
@@ -37,7 +39,10 @@ static uint8_t s_client_created = 0U;
 static uint8_t s_client_started = 0U;
 static uint8_t s_logged_missing_config = 0U;
 static uint32_t s_publish_seq = 1U;
-static mqtt_thermal_snapshot_t s_pending_snapshot = {0};
+static mqtt_thermal_snapshot_t s_pending_snapshots[MQTT_THERMAL_QUEUE_LENGTH];
+static size_t s_pending_snapshot_head = 0U;
+static size_t s_pending_snapshot_tail = 0U;
+static size_t s_pending_snapshot_count = 0U;
 
 static char s_mqtt_host[128];
 static char s_mqtt_client_id[192];
@@ -47,6 +52,58 @@ static char s_topic_property_post[160];
 static char s_topic_property_post_reply[160];
 static char s_topic_property_set[160];
 
+static void mqtt_service_pending_snapshot_reset(void)
+{
+    memset(s_pending_snapshots, 0, sizeof(s_pending_snapshots));
+    s_pending_snapshot_head = 0U;
+    s_pending_snapshot_tail = 0U;
+    s_pending_snapshot_count = 0U;
+}
+
+static bool mqtt_service_pending_snapshot_is_empty(void)
+{
+    return s_pending_snapshot_count == 0U;
+}
+
+static const mqtt_thermal_snapshot_t *mqtt_service_pending_snapshot_peek(void)
+{
+    if (mqtt_service_pending_snapshot_is_empty())
+    {
+        return NULL;
+    }
+
+    return &s_pending_snapshots[s_pending_snapshot_head];
+}
+
+static void mqtt_service_pending_snapshot_pop(void)
+{
+    if (mqtt_service_pending_snapshot_is_empty())
+    {
+        return;
+    }
+
+    s_pending_snapshot_head = (s_pending_snapshot_head + 1U) % MQTT_THERMAL_QUEUE_LENGTH;
+    s_pending_snapshot_count--;
+}
+
+static void mqtt_service_pending_snapshot_push(const mqtt_thermal_snapshot_t *snapshot)
+{
+    if (snapshot == NULL)
+    {
+        return;
+    }
+
+    if (s_pending_snapshot_count >= MQTT_THERMAL_QUEUE_LENGTH)
+    {
+        ESP_LOGW(MQTT_TAG, "Thermal queue full, drop oldest pending snapshot");
+        mqtt_service_pending_snapshot_pop();
+    }
+
+    s_pending_snapshots[s_pending_snapshot_tail] = *snapshot;
+    s_pending_snapshot_tail = (s_pending_snapshot_tail + 1U) % MQTT_THERMAL_QUEUE_LENGTH;
+    s_pending_snapshot_count++;
+}
+
 static uint8_t mqtt_service_is_configured(void)
 {
     if (ALIYUN_MQTT_ENABLE == 0U)
@@ -54,19 +111,7 @@ static uint8_t mqtt_service_is_configured(void)
         return 0U;
     }
 
-    if (ALIYUN_IOT_PRODUCT_KEY[0] == '\0' ||
-        ALIYUN_IOT_DEVICE_NAME[0] == '\0' ||
-        ALIYUN_IOT_DEVICE_SECRET[0] == '\0')
-    {
-        return 0U;
-    }
-
-    if (ALIYUN_IOT_MQTT_HOST[0] == '\0' && ALIYUN_IOT_REGION_ID[0] == '\0')
-    {
-        return 0U;
-    }
-
-    return 1U;
+    return app_config_cloud_mqtt_is_configured() ? 1U : 0U;
 }
 
 static void mqtt_service_log_missing_config_once(void)
@@ -78,7 +123,7 @@ static void mqtt_service_log_missing_config_once(void)
 
     s_logged_missing_config = 1U;
     ESP_LOGW(MQTT_TAG,
-             "Alibaba Cloud MQTT is not configured yet. Fill ProductKey/DeviceName/DeviceSecret in MQTT.h.");
+             "Alibaba Cloud MQTT is not configured yet. Fill config/app_private_config.h first.");
 }
 
 static uint16_t mqtt_service_get_port(void)
@@ -98,17 +143,17 @@ static uint8_t mqtt_service_secure_mode(void)
 
 static void mqtt_service_build_host(void)
 {
-    if (ALIYUN_IOT_MQTT_HOST[0] != '\0')
+    if (!app_config_is_placeholder_value(app_config_cloud_mqtt_host()))
     {
-        snprintf(s_mqtt_host, sizeof(s_mqtt_host), "%s", ALIYUN_IOT_MQTT_HOST);
+        snprintf(s_mqtt_host, sizeof(s_mqtt_host), "%s", app_config_cloud_mqtt_host());
         return;
     }
 
     snprintf(s_mqtt_host,
              sizeof(s_mqtt_host),
              "%s.iot-as-mqtt.%s.aliyuncs.com",
-             ALIYUN_IOT_PRODUCT_KEY,
-             ALIYUN_IOT_REGION_ID);
+             app_config_cloud_product_key(),
+             app_config_cloud_region_id());
 }
 
 static void mqtt_service_build_topics(void)
@@ -116,18 +161,18 @@ static void mqtt_service_build_topics(void)
     snprintf(s_topic_property_post,
              sizeof(s_topic_property_post),
              "/sys/%s/%s/thing/event/property/post",
-             ALIYUN_IOT_PRODUCT_KEY,
-             ALIYUN_IOT_DEVICE_NAME);
+             app_config_cloud_product_key(),
+             app_config_cloud_device_name());
     snprintf(s_topic_property_post_reply,
              sizeof(s_topic_property_post_reply),
              "/sys/%s/%s/thing/event/property/post_reply",
-             ALIYUN_IOT_PRODUCT_KEY,
-             ALIYUN_IOT_DEVICE_NAME);
+             app_config_cloud_product_key(),
+             app_config_cloud_device_name());
     snprintf(s_topic_property_set,
              sizeof(s_topic_property_set),
              "/sys/%s/%s/thing/service/property/set",
-             ALIYUN_IOT_PRODUCT_KEY,
-             ALIYUN_IOT_DEVICE_NAME);
+             app_config_cloud_product_key(),
+             app_config_cloud_device_name());
 }
 
 static void mqtt_service_hex_encode(const uint8_t *input, size_t input_len, char *output, size_t output_len)
@@ -174,8 +219,8 @@ static esp_err_t mqtt_service_build_auth(void)
     text_len = snprintf(brief_client_id,
                         sizeof(brief_client_id),
                         "%s.%s",
-                        ALIYUN_IOT_PRODUCT_KEY,
-                        ALIYUN_IOT_DEVICE_NAME);
+                        app_config_cloud_product_key(),
+                        app_config_cloud_device_name());
     if (text_len < 0 || (size_t)text_len >= sizeof(brief_client_id))
     {
         ESP_LOGE(MQTT_TAG, "brief client id buffer is too small");
@@ -197,8 +242,8 @@ static esp_err_t mqtt_service_build_auth(void)
     text_len = snprintf(s_mqtt_username,
                         sizeof(s_mqtt_username),
                         "%s&%s",
-                        ALIYUN_IOT_DEVICE_NAME,
-                        ALIYUN_IOT_PRODUCT_KEY);
+                        app_config_cloud_device_name(),
+                        app_config_cloud_product_key());
     if (text_len < 0 || (size_t)text_len >= sizeof(s_mqtt_username))
     {
         ESP_LOGE(MQTT_TAG, "mqtt username buffer is too small");
@@ -209,8 +254,8 @@ static esp_err_t mqtt_service_build_auth(void)
                         sizeof(sign_content),
                         "clientId%sdeviceName%sproductKey%stimestamp%s",
                         brief_client_id,
-                        ALIYUN_IOT_DEVICE_NAME,
-                        ALIYUN_IOT_PRODUCT_KEY,
+                        app_config_cloud_device_name(),
+                        app_config_cloud_product_key(),
                         timestamp_ms);
     if (text_len < 0 || (size_t)text_len >= sizeof(sign_content))
     {
@@ -234,8 +279,8 @@ static esp_err_t mqtt_service_build_auth(void)
     }
 
     ret = mbedtls_md_hmac_starts(&md_ctx,
-                                 (const unsigned char *)ALIYUN_IOT_DEVICE_SECRET,
-                                 strlen(ALIYUN_IOT_DEVICE_SECRET));
+                                 (const unsigned char *)app_config_cloud_device_secret(),
+                                 strlen(app_config_cloud_device_secret()));
     if (ret == 0)
     {
         ret = mbedtls_md_hmac_update(&md_ctx,
@@ -374,6 +419,7 @@ static void mqtt_service_add_property(cJSON *params,
 
 static esp_err_t mqtt_service_publish_pending_snapshot(void)
 {
+    const mqtt_thermal_snapshot_t *snapshot = NULL;
     cJSON *root = NULL;
     cJSON *params = NULL;
     cJSON *sys = NULL;
@@ -384,7 +430,8 @@ static esp_err_t mqtt_service_publish_pending_snapshot(void)
     float center_temp = 0.0f;
     esp_err_t err = ESP_OK;
 
-    if (s_pending_snapshot.valid == 0U)
+    snapshot = mqtt_service_pending_snapshot_peek();
+    if (snapshot == NULL)
     {
         return ESP_OK;
     }
@@ -394,9 +441,9 @@ static esp_err_t mqtt_service_publish_pending_snapshot(void)
         return ESP_ERR_INVALID_STATE;
     }
 
-    min_temp = ((float)s_pending_snapshot.min_temp_x10) / 10.0f;
-    max_temp = ((float)s_pending_snapshot.max_temp_x10) / 10.0f;
-    center_temp = ((float)s_pending_snapshot.center_temp_x10) / 10.0f;
+    min_temp = ((float)snapshot->min_temp_x10) / 10.0f;
+    max_temp = ((float)snapshot->max_temp_x10) / 10.0f;
+    center_temp = ((float)snapshot->center_temp_x10) / 10.0f;
 
     root = cJSON_CreateObject();
     params = cJSON_CreateObject();
@@ -436,7 +483,7 @@ static esp_err_t mqtt_service_publish_pending_snapshot(void)
     err = mqtt_service_publish_json(s_topic_property_post, json_str);
     if (err == ESP_OK)
     {
-        s_pending_snapshot.valid = 0U;
+        mqtt_service_pending_snapshot_pop();
     }
 
 cleanup:
@@ -474,6 +521,7 @@ static void mqtt_event_handler(void *args, esp_event_base_t base, int32_t event_
     {
     case MQTT_EVENT_CONNECTED:
         mqtt_connected = true;
+        app_service_bus_set_bits(APP_EVENT_MQTT_CONNECTED);
         ESP_LOGI(MQTT_TAG,
                  "%s connected host=%s port=%u",
                  mqtt_service_transport_name(),
@@ -488,6 +536,7 @@ static void mqtt_event_handler(void *args, esp_event_base_t base, int32_t event_
 
     case MQTT_EVENT_DISCONNECTED:
         mqtt_connected = false;
+        app_service_bus_clear_bits(APP_EVENT_MQTT_CONNECTED);
         ESP_LOGW(MQTT_TAG, "MQTT disconnected");
         break;
 
@@ -510,6 +559,7 @@ static void mqtt_event_handler(void *args, esp_event_base_t base, int32_t event_
 
     case MQTT_EVENT_ERROR:
         mqtt_connected = false;
+        app_service_bus_clear_bits(APP_EVENT_MQTT_CONNECTED);
         ESP_LOGE(MQTT_TAG, "MQTT error event");
         if (event != NULL &&
             event->error_handle != NULL &&
@@ -590,6 +640,7 @@ static void mqtt_service_stop_if_needed(void)
     }
     mqtt_connected = false;
     s_client_started = 0U;
+    app_service_bus_clear_bits(APP_EVENT_MQTT_CONNECTED);
 }
 
 static esp_err_t mqtt_service_start_if_needed(void)
@@ -625,10 +676,11 @@ esp_err_t mqtt_service_init(void)
     s_client_started = 0U;
     s_logged_missing_config = 0U;
     s_publish_seq = 1U;
-    s_pending_snapshot.valid = 0U;
     mqtt_connected = false;
     g_publish_flag = 0;
     client = NULL;
+    app_service_bus_clear_bits(APP_EVENT_MQTT_CONNECTED);
+    mqtt_service_pending_snapshot_reset();
 
     if (mqtt_service_is_configured() == 0U)
     {
@@ -638,7 +690,7 @@ esp_err_t mqtt_service_init(void)
 
     ESP_LOGI(MQTT_TAG,
              "Alibaba MQTT service init, endpoint=%s:%u",
-             (ALIYUN_IOT_MQTT_HOST[0] != '\0') ? ALIYUN_IOT_MQTT_HOST : "(derived from productKey+region)",
+             !app_config_is_placeholder_value(app_config_cloud_mqtt_host()) ? app_config_cloud_mqtt_host() : "(derived from productKey+region)",
              (unsigned int)mqtt_service_get_port());
     return ESP_OK;
 }
@@ -676,7 +728,7 @@ void mqtt_service_step(void)
         return;
     }
 
-    if (mqtt_connected != false && s_pending_snapshot.valid != 0U)
+    if (mqtt_connected != false && !mqtt_service_pending_snapshot_is_empty())
     {
         (void)mqtt_service_publish_pending_snapshot();
     }
@@ -703,10 +755,11 @@ esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
         return ESP_ERR_INVALID_STATE;
     }
 
-    s_pending_snapshot.min_temp_x10 = min_temp_x10;
-    s_pending_snapshot.max_temp_x10 = max_temp_x10;
-    s_pending_snapshot.center_temp_x10 = center_temp_x10;
-    s_pending_snapshot.valid = 1U;
+    mqtt_service_pending_snapshot_push(&(mqtt_thermal_snapshot_t){
+        .min_temp_x10 = min_temp_x10,
+        .max_temp_x10 = max_temp_x10,
+        .center_temp_x10 = center_temp_x10,
+    });
 
     if (wifi_service_is_enabled() == 0U)
     {
@@ -724,7 +777,6 @@ esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
         }
     }
 
-    mqtt_service_step();
     return ESP_OK;
 }
 

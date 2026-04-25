@@ -20,12 +20,13 @@
 #include "cJSON.h"
 #include "esp_http_client.h"
 #include "MQTT.h"
+#include "app_config.h"
 #include "esp_crt_bundle.h"  // 添加证书包支持
 
 #define WEB_SERVER "api.seniverse.com"
 #define WEB_PORT "80"
 #define MAX_REQUEST_LEN 2048  // 根据实际需求调整长度
-//#define WEB_URL "/v3/weather/now.json?key=S8jrGDCAt83JQrLnV&location=maoming&language=zh-Hans&unit=c"
+//#define WEB_URL "/v3/weather/now.json?key=your_weather_api_key&location=maoming&language=zh-Hans&unit=c"
 
 extern const char *TAG;
 extern char *REQUEST;

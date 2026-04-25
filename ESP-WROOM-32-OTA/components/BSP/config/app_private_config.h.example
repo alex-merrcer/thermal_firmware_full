@@ -1,0 +1,29 @@
+#ifndef APP_PRIVATE_CONFIG_H
+#define APP_PRIVATE_CONFIG_H
+
+/*
+ * Copy this file to app_private_config.h in the same directory and fill in the
+ * real values. Keep app_private_config.h out of version control.
+ */
+
+#define APP_PRIVATE_WIFI_SSID "your_wifi_ssid"
+#define APP_PRIVATE_WIFI_PASSWORD "your_wifi_password"
+
+#define APP_PRIVATE_ALIYUN_PRODUCT_KEY "your_product_key"
+#define APP_PRIVATE_ALIYUN_DEVICE_NAME "your_device_name"
+#define APP_PRIVATE_ALIYUN_DEVICE_SECRET "your_device_secret"
+#define APP_PRIVATE_ALIYUN_REGION_ID "cn-shanghai"
+#define APP_PRIVATE_ALIYUN_MQTT_HOST "your_instance.mqtt.iothub.aliyuncs.com"
+
+#define APP_PRIVATE_WEATHER_BASE_URL "http://api.seniverse.com"
+#define APP_PRIVATE_WEATHER_API_KEY "your_weather_api_key"
+
+#define APP_PRIVATE_DEEPSEEK_API_URL "https://api.deepseek.com/v1/chat/completions"
+#define APP_PRIVATE_DEEPSEEK_API_KEY "your_deepseek_api_key"
+
+#define APP_FEATURE_ENABLE_BLE_PROVISION_STARTUP 0U
+#define APP_FEATURE_ENABLE_WEATHER_SERVICE_STARTUP 0U
+#define APP_FEATURE_ENABLE_POWER_SERVICE_STARTUP 0U
+#define APP_FEATURE_ENABLE_DIAGNOSTICS_SERVICE_STARTUP 0U
+
+#endif
