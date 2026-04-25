@@ -4,10 +4,8 @@ set(src_dirs
             drivers
             protocol
             services
-            LED
             LCD
             WIFI
-            IIC
             UART
             HTTP
             MQTT
@@ -23,10 +21,8 @@ set(include_dirs
             protocol
             services
             config
-            LED
             LCD
             WIFI
-            IIC
             UART
             HTTP
             MQTT
@@ -37,12 +33,28 @@ set(include_dirs
             )
 
 set(requires
+            app_update
+            bootloader_support
+            bt
+            driver
+            esp_driver_gpio
+            esp_driver_i2c
+            esp_driver_ledc
+            esp_driver_spi
+            esp_driver_uart
+            esp_event
             esp_http_client
+            esp_netif
             nvs_flash
             esp_partition
             esp_rom
+            esp_timer
+            esp_wifi
             json
+            lwip
             mbedtls
+            mqtt
+            spi_flash
             )
 
 idf_component_register(SRC_DIRS ${src_dirs} INCLUDE_DIRS ${include_dirs} REQUIRES ${requires} EMBED_TXTFILES ${project_dir}/server_certs/root.crt)
