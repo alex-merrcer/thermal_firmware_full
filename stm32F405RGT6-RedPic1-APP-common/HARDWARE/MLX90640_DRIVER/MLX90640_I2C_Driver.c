@@ -37,7 +37,7 @@
 
 #define MLX90640_I2C_BUSY_TIMEOUT_US      5000UL
 #define MLX90640_I2C_EVENT_TIMEOUT_US     5000UL
-#define MLX90640_I2C_STOP_RELEASE_WAIT_US 5000UL
+#define MLX90640_I2C_STOP_RELEASE_WAIT_US 3000UL
 #define MLX90640_I2C_BUS_CLEAR_PULSE_US   5UL
 #define MLX90640_I2C_BUS_CLEAR_PULSE_COUNT 9U
 #define MLX90640_I2C_DMA_DISABLE_WAIT_LOOPS 100000UL
@@ -759,6 +759,42 @@ static int MLX90640_I2CReadPollingLocked(uint8_t slaveAddr,
     if (error != 0)
     {
         return error;
+    }
+
+    if (byte_count == 2U)
+    {
+        I2C_NACKPositionConfig(I2Cx, I2C_NACKPosition_Next);
+
+        __disable_irq();
+        I2C_AcknowledgeConfig(I2Cx, DISABLE);
+        MLX90640_I2CClearAddrFlag();
+        __enable_irq();
+
+        MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_BYTE_RECEIVED,
+                                     MLX90640_I2C_WAIT_FLAG_EVENT_BASE | I2C_FLAG_BTF);
+        error = MLX90640_I2CWaitFlag(I2C_FLAG_BTF);
+        if (error != 0)
+        {
+            I2C_NACKPositionConfig(I2Cx, I2C_NACKPosition_Current);
+            I2C_AcknowledgeConfig(I2Cx, ENABLE);
+            return error;
+        }
+
+        __disable_irq();
+        I2C_GenerateSTOP(I2Cx, ENABLE);
+        s_mlx90640_i2c_rx_buffer[0] = I2C_ReceiveData(I2Cx);
+        __enable_irq();
+        s_mlx90640_i2c_rx_buffer[1] = I2C_ReceiveData(I2Cx);
+
+        I2C_NACKPositionConfig(I2Cx, I2C_NACKPosition_Current);
+        I2C_AcknowledgeConfig(I2Cx, ENABLE);
+        if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
+        {
+            app_perf_baseline_record_i2c_stop_release_timeout();
+            MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_READ);
+        }
+        MLX90640_I2CConvertBytesToWords(nMemAddressRead, data);
+        return 0;
     }
 
     for (index = 0U; index < byte_count; ++index)
