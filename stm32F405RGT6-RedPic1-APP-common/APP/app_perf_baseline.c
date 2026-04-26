@@ -69,6 +69,27 @@ static volatile uint32_t s_i2c_poll_timeout_sr1 = 0U;
 static volatile uint32_t s_i2c_poll_timeout_sr2 = 0U;
 static volatile uint32_t s_i2c_poll_timeout_start_addr = 0U;
 static volatile uint32_t s_i2c_poll_timeout_word_count = 0U;
+static volatile uint32_t s_i2c_poll_timeout_read_count = 0U;
+static volatile uint32_t s_i2c_poll_timeout_write_count = 0U;
+static volatile uint32_t s_i2c_poll_timeout_verify_count = 0U;
+static volatile uint32_t s_i2c_addrw_timeout_read_count = 0U;
+static volatile uint32_t s_i2c_addrw_timeout_write_count = 0U;
+static volatile uint32_t s_i2c_addr_8000_timeout_read_count = 0U;
+static volatile uint32_t s_i2c_addr_8000_timeout_write_count = 0U;
+static volatile uint32_t s_i2c_addr_800d_timeout_read_count = 0U;
+static volatile uint32_t s_i2c_addr_800d_timeout_write_count = 0U;
+static volatile uint32_t s_i2c_r8000_addrw_timeout_count = 0U;
+static volatile uint32_t s_i2c_w8000_addrw_timeout_count = 0U;
+static volatile uint32_t s_i2c_r800d_addrw_timeout_count = 0U;
+static volatile uint32_t s_i2c_r800d_rx_timeout_count = 0U;
+static volatile uint32_t s_i2c_busy_timeout_read_count = 0U;
+static volatile uint32_t s_i2c_busy_timeout_write_count = 0U;
+static volatile uint32_t s_i2c_busy_timeout_verify_count = 0U;
+static volatile uint32_t s_i2c_bus_clear_count = 0U;
+static volatile uint32_t s_i2c_bus_clear_read_count = 0U;
+static volatile uint32_t s_i2c_bus_clear_write_count = 0U;
+static volatile uint32_t s_i2c_bus_clear_dma_count = 0U;
+static volatile uint32_t s_i2c_bus_clear_busy_timeout_count = 0U;
 static volatile uint32_t s_dma_timeout_count = 0U;
 static volatile uint32_t s_thermal_backoff_count = 0U;
 static volatile uint32_t s_thermal_pair_timeout_count = 0U;
@@ -176,6 +197,70 @@ static uint32_t app_perf_stat_avg(const app_perf_stat_accum_t *stat)
     return (uint32_t)(stat->total / stat->count);
 }
 
+static void app_perf_baseline_record_i2c_timeout_classified(app_perf_i2c_poll_path_t path,
+                                                            app_perf_i2c_poll_phase_t phase,
+                                                            uint16_t start_addr)
+{
+    switch (path)
+    {
+    case APP_PERF_I2C_POLL_PATH_READ:
+        s_i2c_poll_timeout_read_count++;
+        if (phase == APP_PERF_I2C_POLL_PHASE_ADDR_W)
+        {
+            s_i2c_addrw_timeout_read_count++;
+        }
+        if (start_addr == 0x8000U)
+        {
+            s_i2c_addr_8000_timeout_read_count++;
+            if (phase == APP_PERF_I2C_POLL_PHASE_ADDR_W)
+            {
+                s_i2c_r8000_addrw_timeout_count++;
+            }
+        }
+        else if (start_addr == 0x800DU)
+        {
+            s_i2c_addr_800d_timeout_read_count++;
+            if (phase == APP_PERF_I2C_POLL_PHASE_ADDR_W)
+            {
+                s_i2c_r800d_addrw_timeout_count++;
+            }
+            else if (phase == APP_PERF_I2C_POLL_PHASE_BYTE_RECEIVED)
+            {
+                s_i2c_r800d_rx_timeout_count++;
+            }
+        }
+        break;
+
+    case APP_PERF_I2C_POLL_PATH_WRITE:
+        s_i2c_poll_timeout_write_count++;
+        if (phase == APP_PERF_I2C_POLL_PHASE_ADDR_W)
+        {
+            s_i2c_addrw_timeout_write_count++;
+        }
+        if (start_addr == 0x8000U)
+        {
+            s_i2c_addr_8000_timeout_write_count++;
+            if (phase == APP_PERF_I2C_POLL_PHASE_ADDR_W)
+            {
+                s_i2c_w8000_addrw_timeout_count++;
+            }
+        }
+        else if (start_addr == 0x800DU)
+        {
+            s_i2c_addr_800d_timeout_write_count++;
+        }
+        break;
+
+    case APP_PERF_I2C_POLL_PATH_VERIFY_READ:
+        s_i2c_poll_timeout_verify_count++;
+        break;
+
+    case APP_PERF_I2C_POLL_PATH_NONE:
+    default:
+        break;
+    }
+}
+
 static uint32_t app_perf_cycles_to_us(uint32_t cycles)
 {
     uint32_t cycles_per_us = SystemCoreClock / 1000000UL;
@@ -262,6 +347,27 @@ void app_perf_baseline_reset(void)
     s_i2c_poll_timeout_sr2 = 0U;
     s_i2c_poll_timeout_start_addr = 0U;
     s_i2c_poll_timeout_word_count = 0U;
+    s_i2c_poll_timeout_read_count = 0U;
+    s_i2c_poll_timeout_write_count = 0U;
+    s_i2c_poll_timeout_verify_count = 0U;
+    s_i2c_addrw_timeout_read_count = 0U;
+    s_i2c_addrw_timeout_write_count = 0U;
+    s_i2c_addr_8000_timeout_read_count = 0U;
+    s_i2c_addr_8000_timeout_write_count = 0U;
+    s_i2c_addr_800d_timeout_read_count = 0U;
+    s_i2c_addr_800d_timeout_write_count = 0U;
+    s_i2c_r8000_addrw_timeout_count = 0U;
+    s_i2c_w8000_addrw_timeout_count = 0U;
+    s_i2c_r800d_addrw_timeout_count = 0U;
+    s_i2c_r800d_rx_timeout_count = 0U;
+    s_i2c_busy_timeout_read_count = 0U;
+    s_i2c_busy_timeout_write_count = 0U;
+    s_i2c_busy_timeout_verify_count = 0U;
+    s_i2c_bus_clear_count = 0U;
+    s_i2c_bus_clear_read_count = 0U;
+    s_i2c_bus_clear_write_count = 0U;
+    s_i2c_bus_clear_dma_count = 0U;
+    s_i2c_bus_clear_busy_timeout_count = 0U;
     s_dma_timeout_count = 0U;
     s_thermal_backoff_count = 0U;
     s_thermal_pair_timeout_count = 0U;
@@ -723,6 +829,7 @@ void app_perf_baseline_record_i2c_poll_event_timeout(app_perf_i2c_poll_path_t pa
 {
 #if APP_PERF_BASELINE_ENABLE
     s_i2c_poll_event_timeout_count++;
+    app_perf_baseline_record_i2c_timeout_classified(path, phase, start_addr);
     s_i2c_poll_timeout_path = (uint32_t)path;
     s_i2c_poll_timeout_phase = (uint32_t)phase;
     s_i2c_poll_timeout_event = event;
@@ -749,6 +856,22 @@ void app_perf_baseline_record_i2c_poll_busy_timeout(app_perf_i2c_poll_path_t pat
 {
 #if APP_PERF_BASELINE_ENABLE
     s_i2c_poll_busy_timeout_count++;
+    app_perf_baseline_record_i2c_timeout_classified(path, APP_PERF_I2C_POLL_PHASE_WAIT_BUSY, start_addr);
+    switch (path)
+    {
+    case APP_PERF_I2C_POLL_PATH_READ:
+        s_i2c_busy_timeout_read_count++;
+        break;
+    case APP_PERF_I2C_POLL_PATH_WRITE:
+        s_i2c_busy_timeout_write_count++;
+        break;
+    case APP_PERF_I2C_POLL_PATH_VERIFY_READ:
+        s_i2c_busy_timeout_verify_count++;
+        break;
+    case APP_PERF_I2C_POLL_PATH_NONE:
+    default:
+        break;
+    }
     s_i2c_poll_timeout_path = (uint32_t)path;
     s_i2c_poll_timeout_phase = (uint32_t)APP_PERF_I2C_POLL_PHASE_WAIT_BUSY;
     s_i2c_poll_timeout_event = 0U;
@@ -765,10 +888,56 @@ void app_perf_baseline_record_i2c_poll_busy_timeout(app_perf_i2c_poll_path_t pat
 #endif
 }
 
-void app_perf_baseline_record_i2c_er_timeout(void)
+void app_perf_baseline_record_i2c_er_timeout(app_perf_i2c_poll_path_t path,
+                                             app_perf_i2c_poll_phase_t phase,
+                                             uint16_t start_addr,
+                                             uint16_t word_count,
+                                             uint32_t sr1,
+                                             uint32_t sr2)
 {
 #if APP_PERF_BASELINE_ENABLE
     s_i2c_er_timeout_count++;
+    app_perf_baseline_record_i2c_timeout_classified(path, phase, start_addr);
+    s_i2c_poll_timeout_path = (uint32_t)path;
+    s_i2c_poll_timeout_phase = (uint32_t)phase;
+    s_i2c_poll_timeout_event = 0U;
+    s_i2c_poll_timeout_sr1 = sr1;
+    s_i2c_poll_timeout_sr2 = sr2;
+    s_i2c_poll_timeout_start_addr = (uint32_t)start_addr;
+    s_i2c_poll_timeout_word_count = (uint32_t)word_count;
+#else
+    (void)path;
+    (void)phase;
+    (void)start_addr;
+    (void)word_count;
+    (void)sr1;
+    (void)sr2;
+#endif
+}
+
+void app_perf_baseline_record_i2c_bus_clear(app_perf_i2c_bus_clear_source_t source)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_bus_clear_count++;
+    switch (source)
+    {
+    case APP_PERF_I2C_BUS_CLEAR_READ:
+        s_i2c_bus_clear_read_count++;
+        break;
+    case APP_PERF_I2C_BUS_CLEAR_WRITE:
+        s_i2c_bus_clear_write_count++;
+        break;
+    case APP_PERF_I2C_BUS_CLEAR_DMA:
+        s_i2c_bus_clear_dma_count++;
+        break;
+    case APP_PERF_I2C_BUS_CLEAR_BUSY_TIMEOUT:
+        s_i2c_bus_clear_busy_timeout_count++;
+        break;
+    default:
+        break;
+    }
+#else
+    (void)source;
 #endif
 }
 
@@ -1175,6 +1344,27 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->i2c_poll_timeout_sr2 = s_i2c_poll_timeout_sr2;
     snapshot->i2c_poll_timeout_start_addr = s_i2c_poll_timeout_start_addr;
     snapshot->i2c_poll_timeout_word_count = s_i2c_poll_timeout_word_count;
+    snapshot->i2c_poll_timeout_read_count = s_i2c_poll_timeout_read_count;
+    snapshot->i2c_poll_timeout_write_count = s_i2c_poll_timeout_write_count;
+    snapshot->i2c_poll_timeout_verify_count = s_i2c_poll_timeout_verify_count;
+    snapshot->i2c_addrw_timeout_read_count = s_i2c_addrw_timeout_read_count;
+    snapshot->i2c_addrw_timeout_write_count = s_i2c_addrw_timeout_write_count;
+    snapshot->i2c_addr_8000_timeout_read_count = s_i2c_addr_8000_timeout_read_count;
+    snapshot->i2c_addr_8000_timeout_write_count = s_i2c_addr_8000_timeout_write_count;
+    snapshot->i2c_addr_800d_timeout_read_count = s_i2c_addr_800d_timeout_read_count;
+    snapshot->i2c_addr_800d_timeout_write_count = s_i2c_addr_800d_timeout_write_count;
+    snapshot->i2c_r8000_addrw_timeout_count = s_i2c_r8000_addrw_timeout_count;
+    snapshot->i2c_w8000_addrw_timeout_count = s_i2c_w8000_addrw_timeout_count;
+    snapshot->i2c_r800d_addrw_timeout_count = s_i2c_r800d_addrw_timeout_count;
+    snapshot->i2c_r800d_rx_timeout_count = s_i2c_r800d_rx_timeout_count;
+    snapshot->i2c_busy_timeout_read_count = s_i2c_busy_timeout_read_count;
+    snapshot->i2c_busy_timeout_write_count = s_i2c_busy_timeout_write_count;
+    snapshot->i2c_busy_timeout_verify_count = s_i2c_busy_timeout_verify_count;
+    snapshot->i2c_bus_clear_count = s_i2c_bus_clear_count;
+    snapshot->i2c_bus_clear_read_count = s_i2c_bus_clear_read_count;
+    snapshot->i2c_bus_clear_write_count = s_i2c_bus_clear_write_count;
+    snapshot->i2c_bus_clear_dma_count = s_i2c_bus_clear_dma_count;
+    snapshot->i2c_bus_clear_busy_timeout_count = s_i2c_bus_clear_busy_timeout_count;
     snapshot->dma_timeout_count = s_dma_timeout_count;
     snapshot->thermal_backoff_count = s_thermal_backoff_count;
     snapshot->thermal_pair_timeout_count = s_thermal_pair_timeout_count;

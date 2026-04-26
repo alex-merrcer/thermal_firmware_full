@@ -341,7 +341,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_ASYNC_TIMEOUT_WIFI_MS  3000UL
 #define PAGE_ASYNC_TIMEOUT_OTA_MS   7000UL
 #define PERF_BASELINE_REFRESH_MS    250UL
-#define PERF_SUBPAGE_COUNT          12U
+#define PERF_SUBPAGE_COUNT          13U
 #define PERF_LABEL_X                12U
 #define PERF_VALUE_X                180U
 #define PERF_TIMING_VALUE_X         106U
@@ -2873,9 +2873,10 @@ static void perf_baseline_draw_layout(uint8_t enabled)
     static const char *s_i2c_dma_labels[4] = { "I2C AF", "I2C BERR", "I2C ARLO", "I2C OVR" };
     static const char *s_i2c_dma_to_diag_labels[4] = { "TO State", "TO NDTR", "TO SR1", "TO SR2" };
     static const char *s_i2c_dma_tc_diag_labels[4] = { "TC State", "TC NDTR", "TC SR1", "TC SR2" };
-    static const char *s_i2c_timeout_src_labels[4] = { "DMAWait TMO", "PollEvt TMO", "PollBusy TMO", "ER TMO" };
-    static const char *s_i2c_poll_timeout_labels[4] = { "Poll Path", "Poll Phase", "Poll Addr", "Poll Words" };
+    static const char *s_i2c_timeout_src_labels[4] = { "R/W/V TMO", "ADDRW", "8000", "800D" };
+    static const char *s_i2c_poll_timeout_labels[4] = { "R8000AW", "W8000AW", "R800DAW", "R800DRX" };
     static const char *s_pair_diag_labels[4] = { "PairOK", "PairWait", "PairTO", "Streak" };
+    static const char *s_bus_clear_labels[4] = { "BusClrRead", "BusClrWrite", "BusClrDma", "BusClrBusy" };
     static const char *s_disabled_labels[4] = { "Status", "Switch", "Action", "Scope" };
     const char **labels = s_snapshot_labels;
     uint8_t index = 0U;
@@ -2920,6 +2921,9 @@ static void perf_baseline_draw_layout(uint8_t enabled)
             break;
         case 11U:
             labels = s_pair_diag_labels;
+            break;
+        case 12U:
+            labels = s_bus_clear_labels;
             break;
         case 0U:
         default:
@@ -3466,7 +3470,7 @@ static void perf_baseline_draw_i2c_dma_tc_diag(const app_perf_baseline_snapshot_
 
 static void perf_baseline_draw_i2c_timeout_sources(const app_perf_baseline_snapshot_t *snapshot)
 {
-    char value[24];
+    char value[32];
     char footer1[40];
     char footer2[40];
 
@@ -3475,36 +3479,58 @@ static void perf_baseline_draw_i2c_timeout_sources(const app_perf_baseline_snaps
         return;
     }
 
-    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_dma_wait_timeout_count);
+    snprintf(value,
+             sizeof(value),
+             "%lu/%lu/%lu",
+             (unsigned long)snapshot->i2c_poll_timeout_read_count,
+             (unsigned long)snapshot->i2c_poll_timeout_write_count,
+             (unsigned long)snapshot->i2c_poll_timeout_verify_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
                                   value,
-                                  (snapshot->i2c_dma_wait_timeout_count != 0U) ? RED : DARKBLUE);
+                                  ((snapshot->i2c_poll_timeout_read_count +
+                                    snapshot->i2c_poll_timeout_write_count +
+                                    snapshot->i2c_poll_timeout_verify_count) != 0U) ? RED : DARKBLUE);
 
-    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_poll_event_timeout_count);
+    snprintf(value,
+             sizeof(value),
+             "%lu/%lu",
+             (unsigned long)snapshot->i2c_addrw_timeout_read_count,
+             (unsigned long)snapshot->i2c_addrw_timeout_write_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
                                   value,
-                                  (snapshot->i2c_poll_event_timeout_count != 0U) ? RED : DARKBLUE);
+                                  ((snapshot->i2c_addrw_timeout_read_count +
+                                    snapshot->i2c_addrw_timeout_write_count) != 0U) ? RED : DARKBLUE);
 
-    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_poll_busy_timeout_count);
+    snprintf(value,
+             sizeof(value),
+             "%lu/%lu",
+             (unsigned long)snapshot->i2c_addr_8000_timeout_read_count,
+             (unsigned long)snapshot->i2c_addr_8000_timeout_write_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
                                   value,
-                                  (snapshot->i2c_poll_busy_timeout_count != 0U) ? RED : DARKBLUE);
+                                  ((snapshot->i2c_addr_8000_timeout_read_count +
+                                    snapshot->i2c_addr_8000_timeout_write_count) != 0U) ? RED : DARKBLUE);
 
-    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_er_timeout_count);
+    snprintf(value,
+             sizeof(value),
+             "%lu/%lu",
+             (unsigned long)snapshot->i2c_addr_800d_timeout_read_count,
+             (unsigned long)snapshot->i2c_addr_800d_timeout_write_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
                                   value,
-                                  (snapshot->i2c_er_timeout_count != 0U) ? RED : DARKBLUE);
+                                  ((snapshot->i2c_addr_800d_timeout_read_count +
+                                    snapshot->i2c_addr_800d_timeout_write_count) != 0U) ? RED : DARKBLUE);
 
     snprintf(footer1,
              sizeof(footer1),
-             "TMO:%lu I2:%lu",
-             (unsigned long)snapshot->i2c_timeout_count,
-             (unsigned long)snapshot->i2c_failure_count);
+             "BUSY R/W/D:%lu/%lu/%lu",
+             (unsigned long)snapshot->i2c_busy_timeout_read_count,
+             (unsigned long)snapshot->i2c_busy_timeout_write_count,
+             (unsigned long)snapshot->i2c_busy_timeout_verify_count);
     snprintf(footer2,
              sizeof(footer2),
-             "DMAE:%lu PairTO:%lu",
-             (unsigned long)snapshot->i2c_dma_err_count,
-             (unsigned long)snapshot->thermal_pair_timeout_count);
+             "BusClear:%lu",
+             (unsigned long)snapshot->i2c_bus_clear_count);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3519,33 +3545,35 @@ static void perf_baseline_draw_i2c_poll_timeout_detail(const app_perf_baseline_s
         return;
     }
 
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_r8000_addrw_timeout_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
-                                  perf_baseline_i2c_poll_path_name(snapshot->i2c_poll_timeout_path),
-                                  (snapshot->i2c_poll_timeout_path != 0U) ? RED : DARKBLUE);
+                                  value,
+                                  (snapshot->i2c_r8000_addrw_timeout_count != 0U) ? RED : DARKBLUE);
 
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_w8000_addrw_timeout_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
-                                  perf_baseline_i2c_poll_phase_name(snapshot->i2c_poll_timeout_phase),
-                                  (snapshot->i2c_poll_timeout_phase != 0U) ? RED : DARKBLUE);
+                                  value,
+                                  (snapshot->i2c_w8000_addrw_timeout_count != 0U) ? RED : DARKBLUE);
 
-    snprintf(value, sizeof(value), "0x%04lX", (unsigned long)(snapshot->i2c_poll_timeout_start_addr & 0xFFFFUL));
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_r800d_addrw_timeout_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
                                   value,
-                                  (snapshot->i2c_poll_timeout_start_addr != 0U) ? RED : DARKBLUE);
+                                  (snapshot->i2c_r800d_addrw_timeout_count != 0U) ? RED : DARKBLUE);
 
-    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_poll_timeout_word_count);
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_r800d_rx_timeout_count);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
                                   value,
-                                  (snapshot->i2c_poll_timeout_word_count != 0U) ? RED : DARKBLUE);
+                                  (snapshot->i2c_r800d_rx_timeout_count != 0U) ? RED : DARKBLUE);
 
     snprintf(footer1,
              sizeof(footer1),
-             "Evt:0x%lX",
-             (unsigned long)snapshot->i2c_poll_timeout_event);
+             "I2:%lu TMO:%lu",
+             (unsigned long)snapshot->i2c_failure_count,
+             (unsigned long)snapshot->i2c_timeout_count);
     snprintf(footer2,
              sizeof(footer2),
-             "S1:%04lX S2:%04lX",
-             (unsigned long)(snapshot->i2c_poll_timeout_sr1 & 0xFFFFUL),
-             (unsigned long)(snapshot->i2c_poll_timeout_sr2 & 0xFFFFUL));
+             "PairTO:%lu",
+             (unsigned long)snapshot->thermal_pair_timeout_count);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3620,6 +3648,50 @@ static void perf_baseline_draw_pair_diag(const app_perf_baseline_snapshot_t *sna
              perf_baseline_pair_result_name(snapshot->thermal_pair_last_result),
              (unsigned long)snapshot->thermal_pair_timeout_get_temp_last_us,
              (unsigned long)snapshot->thermal_pair_timeout_step_last_us);
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
+static void perf_baseline_draw_bus_clear_diag(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_bus_clear_read_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  value,
+                                  (snapshot->i2c_bus_clear_read_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_bus_clear_write_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  value,
+                                  (snapshot->i2c_bus_clear_write_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_bus_clear_dma_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->i2c_bus_clear_dma_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_bus_clear_busy_timeout_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->i2c_bus_clear_busy_timeout_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "BusClear:%lu PairTO:%lu",
+             (unsigned long)snapshot->i2c_bus_clear_count,
+             (unsigned long)snapshot->thermal_pair_timeout_count);
+    snprintf(footer2,
+             sizeof(footer2),
+             "I2:%lu TMO:%lu",
+             (unsigned long)snapshot->i2c_failure_count,
+             (unsigned long)snapshot->i2c_timeout_count);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3850,6 +3922,9 @@ static void perf_baseline_render(uint8_t full_refresh)
         break;
     case 11U:
         perf_baseline_draw_pair_diag(&snapshot);
+        break;
+    case 12U:
+        perf_baseline_draw_bus_clear_diag(&snapshot);
         break;
     case 0U:
     default:

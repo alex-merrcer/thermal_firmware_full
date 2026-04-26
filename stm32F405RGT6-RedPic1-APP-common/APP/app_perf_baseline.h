@@ -63,6 +63,14 @@ typedef enum
 
 typedef enum
 {
+    APP_PERF_I2C_BUS_CLEAR_READ = 0,
+    APP_PERF_I2C_BUS_CLEAR_WRITE,
+    APP_PERF_I2C_BUS_CLEAR_DMA,
+    APP_PERF_I2C_BUS_CLEAR_BUSY_TIMEOUT
+} app_perf_i2c_bus_clear_source_t;
+
+typedef enum
+{
     APP_PERF_THERMAL_PAIR_RESULT_NONE = 0,
     APP_PERF_THERMAL_PAIR_RESULT_WAIT_OTHER,
     APP_PERF_THERMAL_PAIR_RESULT_TIMEOUT,
@@ -180,6 +188,27 @@ typedef struct
     uint32_t i2c_poll_timeout_sr2;
     uint32_t i2c_poll_timeout_start_addr;
     uint32_t i2c_poll_timeout_word_count;
+    uint32_t i2c_poll_timeout_read_count;
+    uint32_t i2c_poll_timeout_write_count;
+    uint32_t i2c_poll_timeout_verify_count;
+    uint32_t i2c_addrw_timeout_read_count;
+    uint32_t i2c_addrw_timeout_write_count;
+    uint32_t i2c_addr_8000_timeout_read_count;
+    uint32_t i2c_addr_8000_timeout_write_count;
+    uint32_t i2c_addr_800d_timeout_read_count;
+    uint32_t i2c_addr_800d_timeout_write_count;
+    uint32_t i2c_r8000_addrw_timeout_count;
+    uint32_t i2c_w8000_addrw_timeout_count;
+    uint32_t i2c_r800d_addrw_timeout_count;
+    uint32_t i2c_r800d_rx_timeout_count;
+    uint32_t i2c_busy_timeout_read_count;
+    uint32_t i2c_busy_timeout_write_count;
+    uint32_t i2c_busy_timeout_verify_count;
+    uint32_t i2c_bus_clear_count;
+    uint32_t i2c_bus_clear_read_count;
+    uint32_t i2c_bus_clear_write_count;
+    uint32_t i2c_bus_clear_dma_count;
+    uint32_t i2c_bus_clear_busy_timeout_count;
     uint32_t dma_timeout_count;
     uint32_t thermal_backoff_count;
     uint32_t thermal_pair_timeout_count;
@@ -275,7 +304,13 @@ void app_perf_baseline_record_i2c_poll_busy_timeout(app_perf_i2c_poll_path_t pat
                                                     uint16_t word_count,
                                                     uint32_t sr1,
                                                     uint32_t sr2);
-void app_perf_baseline_record_i2c_er_timeout(void);
+void app_perf_baseline_record_i2c_er_timeout(app_perf_i2c_poll_path_t path,
+                                             app_perf_i2c_poll_phase_t phase,
+                                             uint16_t start_addr,
+                                             uint16_t word_count,
+                                             uint32_t sr1,
+                                             uint32_t sr2);
+void app_perf_baseline_record_i2c_bus_clear(app_perf_i2c_bus_clear_source_t source);
 void app_perf_baseline_record_thermal_backoff(void);
 void app_perf_baseline_record_thermal_pair_timeout(void);
 void app_perf_baseline_record_thermal_pair_wait_other(uint8_t subpage,

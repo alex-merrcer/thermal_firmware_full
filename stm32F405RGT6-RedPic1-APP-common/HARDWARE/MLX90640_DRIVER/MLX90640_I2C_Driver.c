@@ -88,7 +88,7 @@ static uint32_t s_mlx90640_i2c_poll_diag_event = 0U;
 static app_perf_i2c_poll_path_t s_mlx90640_i2c_next_read_path = APP_PERF_I2C_POLL_PATH_NONE;
 
 static uint8_t MLX90640_I2CWaitBusReleaseAfterStop(void);
-static void MLX90640_I2CBusClearAndReinit(void);
+static void MLX90640_I2CBusClearAndReinit(app_perf_i2c_bus_clear_source_t source);
 static void MLX90640_I2CStopRequestsNoReinit(void);
 
 
@@ -189,10 +189,11 @@ static void MLX90640_I2CConfigurePinsForBusClear(void)
     GPIO_SetBits(I2Cx_GPIO_PORT, I2Cx_SCL_PIN | I2Cx_SDA_PIN);
 }
 
-static void MLX90640_I2CBusClearAndReinit(void)
+static void MLX90640_I2CBusClearAndReinit(app_perf_i2c_bus_clear_source_t source)
 {
     uint32_t pulse = 0U;
 
+    app_perf_baseline_record_i2c_bus_clear(source);
     MLX90640_I2CStopRequestsNoReinit();
     I2C_ITConfig(I2Cx, I2C_IT_EVT | I2C_IT_ERR | I2C_IT_BUF, DISABLE);
     I2C_Cmd(I2Cx, DISABLE);
@@ -310,7 +311,7 @@ static void MLX90640_I2CFinishDmaSuccessTaskContext(void)
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
     if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
     {
-        MLX90640_I2CBusClearAndReinit();
+        MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_DMA);
     }
     memset(&s_mlx90640_i2c_dma_ctx, 0, sizeof(s_mlx90640_i2c_dma_ctx));
 }
@@ -366,7 +367,12 @@ static int MLX90640_I2CHandlePollingErrorFlags(void)
                                                         s_mlx90640_i2c_poll_diag_word_count,
                                                         sr1,
                                                         0U);
-        app_perf_baseline_record_i2c_er_timeout();
+        app_perf_baseline_record_i2c_er_timeout(s_mlx90640_i2c_poll_diag_path,
+                                                s_mlx90640_i2c_poll_diag_phase,
+                                                s_mlx90640_i2c_poll_diag_start_addr,
+                                                s_mlx90640_i2c_poll_diag_word_count,
+                                                sr1,
+                                                0U);
         app_perf_baseline_record_i2c_transport_error(APP_PERF_I2C_ERROR_TIMEOUT);
         MLX90640_I2CClearErrorFlags();
         MLX90640_I2CAbortTransferTaskContext();
@@ -397,7 +403,7 @@ static int MLX90640_I2CWaitWhileBusy(void)
                                                            sr2);
             app_perf_baseline_record_i2c_transport_error(APP_PERF_I2C_ERROR_BUSY_STUCK);
             //MLX90640_I2CAbortTransferTaskContext();
-						MLX90640_I2CBusClearAndReinit();
+						MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_BUSY_TIMEOUT);
             return MLX90640_I2C_ERROR_TIMEOUT;
         }
     }
@@ -517,6 +523,31 @@ static void MLX90640_I2CClearAddrFlag(void)
     dummy = I2Cx->SR1;
     dummy = I2Cx->SR2;
     (void)dummy;
+}
+
+static int MLX90640_I2CWaitAddrWriteReady(app_perf_i2c_poll_phase_t first_tx_phase)
+{
+    int error = 0;
+
+    MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W,
+                                 MLX90640_I2C_WAIT_FLAG_EVENT_BASE | I2C_FLAG_ADDR);
+    error = MLX90640_I2CWaitFlag(I2C_FLAG_ADDR);
+    if (error != 0)
+    {
+        return error;
+    }
+
+    MLX90640_I2CClearAddrFlag();
+
+    MLX90640_I2CPollDiagSetPhase(first_tx_phase,
+                                 MLX90640_I2C_WAIT_FLAG_EVENT_BASE | I2C_FLAG_TXE);
+    error = MLX90640_I2CWaitFlag(I2C_FLAG_TXE);
+    if (error != 0)
+    {
+        return error;
+    }
+
+    return 0;
 }
 
 static void MLX90640_I2CConvertBytesToWords(uint16_t word_count, uint16_t *data)
@@ -691,13 +722,11 @@ static int MLX90640_I2CReadPollingLocked(uint8_t slaveAddr,
     }
 
     I2C_Send7bitAddress(I2Cx, sa, I2C_Direction_Transmitter);
-    MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W, MLX90640_I2C_WAIT_FLAG_EVENT_BASE | I2C_FLAG_ADDR);
-    error = MLX90640_I2CWaitFlag(I2C_FLAG_ADDR);
+    error = MLX90640_I2CWaitAddrWriteReady(APP_PERF_I2C_POLL_PHASE_REG_HI);
     if (error != 0)
     {
         return error;
     }
-    MLX90640_I2CClearAddrFlag();
 
     I2C_SendData(I2Cx, cmd[0]);
     MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_REG_HI, I2C_EVENT_MASTER_BYTE_TRANSMITTED);
@@ -755,7 +784,7 @@ static int MLX90640_I2CReadPollingLocked(uint8_t slaveAddr,
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
     if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
     {
-        MLX90640_I2CBusClearAndReinit();
+        MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_READ);
     }
     MLX90640_I2CConvertBytesToWords(nMemAddressRead, data);
     return 0;
@@ -791,18 +820,12 @@ static int MLX90640_I2CWritePollingLocked(uint8_t slaveAddr, uint16_t writeAddre
     }
 
     I2C_Send7bitAddress(I2Cx, sa, I2C_Direction_Transmitter);
-//    MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
-//    error = MLX90640_I2CWaitEvent(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
-			MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W,
-																	 MLX90640_I2C_WAIT_FLAG_EVENT_BASE | I2C_FLAG_ADDR);
-			error = MLX90640_I2CWaitFlag(I2C_FLAG_ADDR);		
+    error = MLX90640_I2CWaitAddrWriteReady(APP_PERF_I2C_POLL_PHASE_REG_HI);
     if (error != 0)
     {
         return error;
     }
-		
-		MLX90640_I2CClearAddrFlag();
-		
+
     for (index = 0; index < 4; ++index)
     {
         I2C_SendData(I2Cx, cmd[index]);
@@ -817,7 +840,7 @@ static int MLX90640_I2CWritePollingLocked(uint8_t slaveAddr, uint16_t writeAddre
     I2C_GenerateSTOP(I2Cx, ENABLE);
     if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
     {
-        MLX90640_I2CBusClearAndReinit();
+        MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_WRITE);
     }
 
     if (writeAddress == 0x8000U)
