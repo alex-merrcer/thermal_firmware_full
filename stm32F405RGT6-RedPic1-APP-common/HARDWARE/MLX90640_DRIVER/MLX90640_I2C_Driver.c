@@ -20,6 +20,8 @@
 #define I2Cx_GPIO_PORT     GPIOB
 #define I2Cx_SCL_PIN       GPIO_Pin_6
 #define I2Cx_SDA_PIN       GPIO_Pin_7
+#define I2Cx_SCL_PINSOURCE GPIO_PinSource6
+#define I2Cx_SDA_PINSOURCE GPIO_PinSource7
 
 #define MLX90640_I2C_RX_DMA_STREAM        DMA1_Stream0
 #define MLX90640_I2C_RX_DMA_CHANNEL       DMA_Channel_1
@@ -35,6 +37,9 @@
 
 #define MLX90640_I2C_BUSY_TIMEOUT_US      5000UL
 #define MLX90640_I2C_EVENT_TIMEOUT_US     5000UL
+#define MLX90640_I2C_STOP_RELEASE_WAIT_US 1000UL
+#define MLX90640_I2C_BUS_CLEAR_PULSE_US   5UL
+#define MLX90640_I2C_BUS_CLEAR_PULSE_COUNT 9U
 #define MLX90640_I2C_DMA_DISABLE_WAIT_LOOPS 100000UL
 #define MLX90640_I2C_RX_BUFFER_BYTES      1664U
 #define MLX90640_I2C_WAIT_FLAG_EVENT_BASE 0x80000000UL
@@ -81,6 +86,11 @@ static uint16_t s_mlx90640_i2c_poll_diag_start_addr = 0U;
 static uint16_t s_mlx90640_i2c_poll_diag_word_count = 0U;
 static uint32_t s_mlx90640_i2c_poll_diag_event = 0U;
 static app_perf_i2c_poll_path_t s_mlx90640_i2c_next_read_path = APP_PERF_I2C_POLL_PATH_NONE;
+
+static uint8_t MLX90640_I2CWaitBusReleaseAfterStop(void);
+static void MLX90640_I2CBusClearAndReinit(void);
+static void MLX90640_I2CStopRequestsNoReinit(void);
+
 
 static void MLX90640_I2CPollDiagBegin(app_perf_i2c_poll_path_t path,
                                       uint16_t start_address,
@@ -153,6 +163,65 @@ static uint32_t MLX90640_I2CElapsedUs(uint32_t start_cycle)
     }
 
     return (DWT->CYCCNT - start_cycle) / cycles_per_us;
+}
+
+static void MLX90640_I2CBusyWaitUs(uint32_t wait_us)
+{
+    uint32_t start_cycle = 0U;
+
+    MLX90640_I2CTimerInit();
+    start_cycle = DWT->CYCCNT;
+    while (MLX90640_I2CElapsedUs(start_cycle) < wait_us)
+    {
+    }
+}
+
+static void MLX90640_I2CConfigurePinsForBusClear(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct;
+
+    GPIO_InitStruct.GPIO_Pin = I2Cx_SCL_PIN | I2Cx_SDA_PIN;
+    GPIO_InitStruct.GPIO_Mode = GPIO_Mode_OUT;
+    GPIO_InitStruct.GPIO_OType = GPIO_OType_OD;
+    GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_UP;
+    GPIO_Init(I2Cx_GPIO_PORT, &GPIO_InitStruct);
+    GPIO_SetBits(I2Cx_GPIO_PORT, I2Cx_SCL_PIN | I2Cx_SDA_PIN);
+}
+
+static void MLX90640_I2CBusClearAndReinit(void)
+{
+    uint32_t pulse = 0U;
+
+    MLX90640_I2CStopRequestsNoReinit();
+    I2C_ITConfig(I2Cx, I2C_IT_EVT | I2C_IT_ERR | I2C_IT_BUF, DISABLE);
+    I2C_Cmd(I2Cx, DISABLE);
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB, ENABLE);
+    MLX90640_I2CConfigurePinsForBusClear();
+    MLX90640_I2CBusyWaitUs(MLX90640_I2C_BUS_CLEAR_PULSE_US);
+
+    if (GPIO_ReadInputDataBit(I2Cx_GPIO_PORT, I2Cx_SDA_PIN) == Bit_RESET)
+    {
+        for (pulse = 0U;
+             pulse < MLX90640_I2C_BUS_CLEAR_PULSE_COUNT &&
+             GPIO_ReadInputDataBit(I2Cx_GPIO_PORT, I2Cx_SDA_PIN) == Bit_RESET;
+             ++pulse)
+        {
+            GPIO_ResetBits(I2Cx_GPIO_PORT, I2Cx_SCL_PIN);
+            MLX90640_I2CBusyWaitUs(MLX90640_I2C_BUS_CLEAR_PULSE_US);
+            GPIO_SetBits(I2Cx_GPIO_PORT, I2Cx_SCL_PIN);
+            MLX90640_I2CBusyWaitUs(MLX90640_I2C_BUS_CLEAR_PULSE_US);
+        }
+    }
+
+    GPIO_ResetBits(I2Cx_GPIO_PORT, I2Cx_SDA_PIN);
+    MLX90640_I2CBusyWaitUs(MLX90640_I2C_BUS_CLEAR_PULSE_US);
+    GPIO_SetBits(I2Cx_GPIO_PORT, I2Cx_SCL_PIN);
+    MLX90640_I2CBusyWaitUs(MLX90640_I2C_BUS_CLEAR_PULSE_US);
+    GPIO_SetBits(I2Cx_GPIO_PORT, I2Cx_SDA_PIN);
+    MLX90640_I2CBusyWaitUs(MLX90640_I2C_BUS_CLEAR_PULSE_US);
+
+    MLX90640_I2CInit();
 }
 
 static void MLX90640_I2CClearErrorFlags(void)
@@ -239,6 +308,10 @@ static void MLX90640_I2CFinishDmaSuccessTaskContext(void)
 {
     MLX90640_I2CStopRequestsNoReinit();
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
+    if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
+    {
+        MLX90640_I2CBusClearAndReinit();
+    }
     memset(&s_mlx90640_i2c_dma_ctx, 0, sizeof(s_mlx90640_i2c_dma_ctx));
 }
 
@@ -323,12 +396,31 @@ static int MLX90640_I2CWaitWhileBusy(void)
                                                            sr1,
                                                            sr2);
             app_perf_baseline_record_i2c_transport_error(APP_PERF_I2C_ERROR_BUSY_STUCK);
-            MLX90640_I2CAbortTransferTaskContext();
+            //MLX90640_I2CAbortTransferTaskContext();
+						MLX90640_I2CBusClearAndReinit();
             return MLX90640_I2C_ERROR_TIMEOUT;
         }
     }
 
     return 0;
+}
+
+static uint8_t MLX90640_I2CWaitBusReleaseAfterStop(void)
+{
+    uint32_t start_cycle = 0U;
+
+    MLX90640_I2CTimerInit();
+    start_cycle = DWT->CYCCNT;
+
+    while (I2C_GetFlagStatus(I2Cx, I2C_FLAG_BUSY) != RESET)
+    {
+        if (MLX90640_I2CElapsedUs(start_cycle) >= MLX90640_I2C_STOP_RELEASE_WAIT_US)
+        {
+            return 0U;
+        }
+    }
+
+    return 1U;
 }
 
 static int MLX90640_I2CWaitEvent(uint32_t event)
@@ -392,8 +484,8 @@ static int MLX90640_I2CWaitFlag(uint32_t flag)
         if (MLX90640_I2CElapsedUs(start_cycle) >= MLX90640_I2C_EVENT_TIMEOUT_US)
         {
             /*
-             * ¹Ø¼ü£ºtimeout ±ß½çÔÙ¸´²éÒ»´Î¡£
-             * Èç¹û flag ÒÑ¾­À´ÁË£¬²»ÒªÎóÅĞ timeout¡£
+             * å…³é”®ï¼štimeout è¾¹ç•Œå†å¤æŸ¥ä¸€æ¬¡ã€‚
+             * å¦‚æœ flag å·²ç»æ¥äº†ï¼Œä¸è¦è¯¯åˆ¤ timeoutã€‚
              */
             if (I2C_GetFlagStatus(I2Cx, flag) != RESET)
             {
@@ -661,6 +753,10 @@ static int MLX90640_I2CReadPollingLocked(uint8_t slaveAddr,
     }
 
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
+    if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
+    {
+        MLX90640_I2CBusClearAndReinit();
+    }
     MLX90640_I2CConvertBytesToWords(nMemAddressRead, data);
     return 0;
 }
@@ -719,6 +815,10 @@ static int MLX90640_I2CWritePollingLocked(uint8_t slaveAddr, uint16_t writeAddre
     }
 
     I2C_GenerateSTOP(I2Cx, ENABLE);
+    if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
+    {
+        MLX90640_I2CBusClearAndReinit();
+    }
 
     if (writeAddress == 0x8000U)
     {
