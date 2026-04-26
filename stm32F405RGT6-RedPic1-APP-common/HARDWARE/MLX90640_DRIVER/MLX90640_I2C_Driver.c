@@ -37,7 +37,7 @@
 
 #define MLX90640_I2C_BUSY_TIMEOUT_US      5000UL
 #define MLX90640_I2C_EVENT_TIMEOUT_US     5000UL
-#define MLX90640_I2C_STOP_RELEASE_WAIT_US 1000UL
+#define MLX90640_I2C_STOP_RELEASE_WAIT_US 5000UL
 #define MLX90640_I2C_BUS_CLEAR_PULSE_US   5UL
 #define MLX90640_I2C_BUS_CLEAR_PULSE_COUNT 9U
 #define MLX90640_I2C_DMA_DISABLE_WAIT_LOOPS 100000UL
@@ -311,6 +311,7 @@ static void MLX90640_I2CFinishDmaSuccessTaskContext(void)
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
     if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
     {
+        app_perf_baseline_record_i2c_stop_release_timeout();
         MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_DMA);
     }
     memset(&s_mlx90640_i2c_dma_ctx, 0, sizeof(s_mlx90640_i2c_dma_ctx));
@@ -784,6 +785,7 @@ static int MLX90640_I2CReadPollingLocked(uint8_t slaveAddr,
     I2C_AcknowledgeConfig(I2Cx, ENABLE);
     if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
     {
+        app_perf_baseline_record_i2c_stop_release_timeout();
         MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_READ);
     }
     MLX90640_I2CConvertBytesToWords(nMemAddressRead, data);
@@ -840,6 +842,7 @@ static int MLX90640_I2CWritePollingLocked(uint8_t slaveAddr, uint16_t writeAddre
     I2C_GenerateSTOP(I2Cx, ENABLE);
     if (MLX90640_I2CWaitBusReleaseAfterStop() == 0U)
     {
+        app_perf_baseline_record_i2c_stop_release_timeout();
         MLX90640_I2CBusClearAndReinit(APP_PERF_I2C_BUS_CLEAR_WRITE);
     }
 

@@ -205,6 +205,7 @@ typedef struct
     uint32_t i2c_busy_timeout_write_count;
     uint32_t i2c_busy_timeout_verify_count;
     uint32_t i2c_bus_clear_count;
+    uint32_t i2c_stop_release_timeout_count;
     uint32_t i2c_bus_clear_read_count;
     uint32_t i2c_bus_clear_write_count;
     uint32_t i2c_bus_clear_dma_count;
@@ -310,6 +311,7 @@ void app_perf_baseline_record_i2c_er_timeout(app_perf_i2c_poll_path_t path,
                                              uint16_t word_count,
                                              uint32_t sr1,
                                              uint32_t sr2);
+void app_perf_baseline_record_i2c_stop_release_timeout(void);
 void app_perf_baseline_record_i2c_bus_clear(app_perf_i2c_bus_clear_source_t source);
 void app_perf_baseline_record_thermal_backoff(void);
 void app_perf_baseline_record_thermal_pair_timeout(void);

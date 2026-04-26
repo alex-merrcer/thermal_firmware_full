@@ -1242,29 +1242,40 @@ static void thermal_task(void *pvParameters)
 static void power_wdg_task(void *pvParameters)
 {
     EventBits_t event_bits = 0U;
+    EventBits_t watchdog_hb_latched = 0U;
     uint32_t uart_error_flags = 0U;
+    uint32_t watchdog_window_start_ms = 0U;
+    uint32_t watchdog_window_ms = 0U;
     power_state_t owned_state = POWER_STATE_ACTIVE_UI;
 
     (void)pvParameters;
     owned_state = power_manager_get_state();
     app_runtime_set_screen_off_event(owned_state);
+    watchdog_window_ms = watchdog_service_get_feed_interval_ms();
+    if (watchdog_window_ms == 0U)
+    {
+        watchdog_window_ms = 1000UL;
+    }
+    watchdog_window_start_ms = power_manager_get_tick_ms();
+    watchdog_service_begin_cycle();
 
     while (1)
     {
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(APP_POWER_LOOP_MS));
         owned_state = app_power_step_and_handle(owned_state);
 
-        watchdog_service_begin_cycle();
+        event_bits = (s_runtime_events != 0) ? xEventGroupGetBits(s_runtime_events) : 0U;
+        watchdog_hb_latched |= (event_bits & APP_EG_HB_ALL);
+
         watchdog_service_mark_progress(WATCHDOG_PROGRESS_MAIN_LOOP);
 
-        event_bits = (s_runtime_events != 0) ? xEventGroupGetBits(s_runtime_events) : 0U;
-        if ((event_bits & APP_EG_HB_UI) != 0U ||
+        if ((watchdog_hb_latched & APP_EG_HB_UI) != 0U ||
             (event_bits & APP_EG_BIT_SCREEN_OFF) != 0U ||
             (event_bits & (APP_EG_BIT_OTA_BUSY | APP_EG_BIT_WIFI_BUSY)) != 0U)
         {
             watchdog_service_mark_progress(WATCHDOG_PROGRESS_UI);
         }
-        if ((event_bits & APP_EG_HB_SERVICE) != 0U ||
+        if ((watchdog_hb_latched & APP_EG_HB_SERVICE) != 0U ||
             (event_bits & (APP_EG_BIT_OTA_BUSY | APP_EG_BIT_WIFI_BUSY)) != 0U)
         {
             watchdog_service_mark_progress(WATCHDOG_PROGRESS_OTA |
@@ -1308,6 +1319,13 @@ static void power_wdg_task(void *pvParameters)
         {
             (void)xEventGroupClearBits(s_runtime_events, APP_EG_HB_ALL);
             (void)xEventGroupSetBits(s_runtime_events, APP_EG_HB_POWER);
+        }
+
+        if ((power_manager_get_tick_ms() - watchdog_window_start_ms) >= watchdog_window_ms)
+        {
+            watchdog_window_start_ms = power_manager_get_tick_ms();
+            watchdog_hb_latched = 0U;
+            watchdog_service_begin_cycle();
         }
     }
 }

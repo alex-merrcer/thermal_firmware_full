@@ -3684,14 +3684,14 @@ static void perf_baseline_draw_bus_clear_diag(const app_perf_baseline_snapshot_t
 
     snprintf(footer1,
              sizeof(footer1),
-             "BusClear:%lu PairTO:%lu",
+             "BusClr:%lu StopRel:%lu",
              (unsigned long)snapshot->i2c_bus_clear_count,
-             (unsigned long)snapshot->thermal_pair_timeout_count);
+             (unsigned long)snapshot->i2c_stop_release_timeout_count);
     snprintf(footer2,
              sizeof(footer2),
-             "I2:%lu TMO:%lu",
-             (unsigned long)snapshot->i2c_failure_count,
-             (unsigned long)snapshot->i2c_timeout_count);
+             "PairTO:%lu I2:%lu",
+             (unsigned long)snapshot->thermal_pair_timeout_count,
+             (unsigned long)snapshot->i2c_failure_count);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 

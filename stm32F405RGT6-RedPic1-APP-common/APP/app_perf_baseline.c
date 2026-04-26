@@ -86,6 +86,7 @@ static volatile uint32_t s_i2c_busy_timeout_read_count = 0U;
 static volatile uint32_t s_i2c_busy_timeout_write_count = 0U;
 static volatile uint32_t s_i2c_busy_timeout_verify_count = 0U;
 static volatile uint32_t s_i2c_bus_clear_count = 0U;
+static volatile uint32_t s_i2c_stop_release_timeout_count = 0U;
 static volatile uint32_t s_i2c_bus_clear_read_count = 0U;
 static volatile uint32_t s_i2c_bus_clear_write_count = 0U;
 static volatile uint32_t s_i2c_bus_clear_dma_count = 0U;
@@ -364,6 +365,7 @@ void app_perf_baseline_reset(void)
     s_i2c_busy_timeout_write_count = 0U;
     s_i2c_busy_timeout_verify_count = 0U;
     s_i2c_bus_clear_count = 0U;
+    s_i2c_stop_release_timeout_count = 0U;
     s_i2c_bus_clear_read_count = 0U;
     s_i2c_bus_clear_write_count = 0U;
     s_i2c_bus_clear_dma_count = 0U;
@@ -941,6 +943,13 @@ void app_perf_baseline_record_i2c_bus_clear(app_perf_i2c_bus_clear_source_t sour
 #endif
 }
 
+void app_perf_baseline_record_i2c_stop_release_timeout(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_stop_release_timeout_count++;
+#endif
+}
+
 void app_perf_baseline_record_thermal_backoff(void)
 {
 #if APP_PERF_BASELINE_ENABLE
@@ -1361,6 +1370,7 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->i2c_busy_timeout_write_count = s_i2c_busy_timeout_write_count;
     snapshot->i2c_busy_timeout_verify_count = s_i2c_busy_timeout_verify_count;
     snapshot->i2c_bus_clear_count = s_i2c_bus_clear_count;
+    snapshot->i2c_stop_release_timeout_count = s_i2c_stop_release_timeout_count;
     snapshot->i2c_bus_clear_read_count = s_i2c_bus_clear_read_count;
     snapshot->i2c_bus_clear_write_count = s_i2c_bus_clear_write_count;
     snapshot->i2c_bus_clear_dma_count = s_i2c_bus_clear_dma_count;
