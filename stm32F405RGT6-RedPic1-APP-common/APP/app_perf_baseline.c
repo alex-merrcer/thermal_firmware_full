@@ -94,6 +94,7 @@ static volatile uint32_t s_i2c_bus_clear_busy_timeout_count = 0U;
 static volatile uint32_t s_dma_timeout_count = 0U;
 static volatile uint32_t s_thermal_backoff_count = 0U;
 static volatile uint32_t s_thermal_pair_timeout_count = 0U;
+static volatile uint32_t s_thermal_pair_grace_ok_count = 0U;
 static volatile uint32_t s_thermal_pair_compose_ok_count = 0U;
 static volatile uint32_t s_thermal_pair_wait_other_count = 0U;
 static volatile uint32_t s_thermal_pair_last_result = APP_PERF_THERMAL_PAIR_RESULT_NONE;
@@ -102,12 +103,18 @@ static volatile uint32_t s_thermal_pair_last_missing_subpage = 0xFFU;
 static volatile uint32_t s_thermal_pair_last_gap_ms = 0U;
 static volatile uint32_t s_thermal_pair_timeout_gap_last_ms = 0U;
 static volatile uint32_t s_thermal_pair_timeout_gap_max_ms = 0U;
+static volatile uint32_t s_thermal_pair_timeout_gap_80_120_count = 0U;
+static volatile uint32_t s_thermal_pair_timeout_gap_120_160_count = 0U;
+static volatile uint32_t s_thermal_pair_timeout_gap_160_240_count = 0U;
+static volatile uint32_t s_thermal_pair_timeout_gap_240_plus_count = 0U;
 static volatile uint32_t s_thermal_pair_compose_gap_last_ms = 0U;
 static volatile uint32_t s_thermal_pair_compose_gap_max_ms = 0U;
 static volatile uint32_t s_thermal_pair_same_subpage_streak_last = 0U;
 static volatile uint32_t s_thermal_pair_same_subpage_streak_max = 0U;
 static volatile uint32_t s_thermal_pair_timeout_get_temp_last_us = 0U;
 static volatile uint32_t s_thermal_pair_timeout_step_last_us = 0U;
+static volatile uint32_t s_thermal_pair_soft_timeout_count = 0U;
+static volatile uint32_t s_thermal_pair_back_slot_null_count = 0U;
 static volatile uint32_t s_thermal_ready_replace_count = 0U;
 static volatile uint32_t s_thermal_display_cancel_count = 0U;
 static volatile uint32_t s_thermal_3d_sync_present_attempt_count = 0U;
@@ -373,6 +380,7 @@ void app_perf_baseline_reset(void)
     s_dma_timeout_count = 0U;
     s_thermal_backoff_count = 0U;
     s_thermal_pair_timeout_count = 0U;
+    s_thermal_pair_grace_ok_count = 0U;
     s_thermal_pair_compose_ok_count = 0U;
     s_thermal_pair_wait_other_count = 0U;
     s_thermal_pair_last_result = APP_PERF_THERMAL_PAIR_RESULT_NONE;
@@ -381,12 +389,18 @@ void app_perf_baseline_reset(void)
     s_thermal_pair_last_gap_ms = 0U;
     s_thermal_pair_timeout_gap_last_ms = 0U;
     s_thermal_pair_timeout_gap_max_ms = 0U;
+    s_thermal_pair_timeout_gap_80_120_count = 0U;
+    s_thermal_pair_timeout_gap_120_160_count = 0U;
+    s_thermal_pair_timeout_gap_160_240_count = 0U;
+    s_thermal_pair_timeout_gap_240_plus_count = 0U;
     s_thermal_pair_compose_gap_last_ms = 0U;
     s_thermal_pair_compose_gap_max_ms = 0U;
     s_thermal_pair_same_subpage_streak_last = 0U;
     s_thermal_pair_same_subpage_streak_max = 0U;
     s_thermal_pair_timeout_get_temp_last_us = 0U;
     s_thermal_pair_timeout_step_last_us = 0U;
+    s_thermal_pair_soft_timeout_count = 0U;
+    s_thermal_pair_back_slot_null_count = 0U;
     s_thermal_ready_replace_count = 0U;
     s_thermal_display_cancel_count = 0U;
     s_thermal_3d_sync_present_attempt_count = 0U;
@@ -965,6 +979,30 @@ void app_perf_baseline_record_thermal_pair_timeout(void)
 #endif
 }
 
+static void app_perf_baseline_record_thermal_pair_timeout_gap_bucket(uint32_t gap_ms)
+{
+#if APP_PERF_BASELINE_ENABLE
+    if (gap_ms <= 120U)
+    {
+        s_thermal_pair_timeout_gap_80_120_count++;
+    }
+    else if (gap_ms <= 160U)
+    {
+        s_thermal_pair_timeout_gap_120_160_count++;
+    }
+    else if (gap_ms <= 240U)
+    {
+        s_thermal_pair_timeout_gap_160_240_count++;
+    }
+    else
+    {
+        s_thermal_pair_timeout_gap_240_plus_count++;
+    }
+#else
+    (void)gap_ms;
+#endif
+}
+
 void app_perf_baseline_record_thermal_pair_wait_other(uint8_t subpage,
                                                       uint8_t missing_subpage,
                                                       uint32_t gap_ms,
@@ -1007,6 +1045,7 @@ void app_perf_baseline_record_thermal_pair_timeout_detail(uint8_t subpage,
     {
         s_thermal_pair_timeout_gap_max_ms = gap_ms;
     }
+    app_perf_baseline_record_thermal_pair_timeout_gap_bucket(gap_ms);
     s_thermal_pair_same_subpage_streak_last = same_subpage_streak;
     if (same_subpage_streak > s_thermal_pair_same_subpage_streak_max)
     {
@@ -1021,6 +1060,36 @@ void app_perf_baseline_record_thermal_pair_timeout_detail(uint8_t subpage,
     (void)same_subpage_streak;
     (void)get_temp_elapsed_us;
     (void)step_elapsed_us;
+#endif
+}
+
+void app_perf_baseline_record_thermal_pair_grace_ok(uint8_t subpage,
+                                                    uint8_t other_subpage,
+                                                    uint32_t gap_ms,
+                                                    uint32_t same_subpage_streak)
+{
+#if APP_PERF_BASELINE_ENABLE
+    (void)other_subpage;
+    s_thermal_pair_grace_ok_count++;
+    s_thermal_pair_last_result = APP_PERF_THERMAL_PAIR_RESULT_GRACE_OK;
+    s_thermal_pair_last_subpage = (uint32_t)subpage;
+    s_thermal_pair_last_missing_subpage = 0xFFU;
+    s_thermal_pair_last_gap_ms = gap_ms;
+    s_thermal_pair_compose_gap_last_ms = gap_ms;
+    if (gap_ms > s_thermal_pair_compose_gap_max_ms)
+    {
+        s_thermal_pair_compose_gap_max_ms = gap_ms;
+    }
+    s_thermal_pair_same_subpage_streak_last = same_subpage_streak;
+    if (same_subpage_streak > s_thermal_pair_same_subpage_streak_max)
+    {
+        s_thermal_pair_same_subpage_streak_max = same_subpage_streak;
+    }
+#else
+    (void)subpage;
+    (void)other_subpage;
+    (void)gap_ms;
+    (void)same_subpage_streak;
 #endif
 }
 
@@ -1051,6 +1120,20 @@ void app_perf_baseline_record_thermal_pair_compose_ok(uint8_t subpage,
     (void)other_subpage;
     (void)gap_ms;
     (void)same_subpage_streak;
+#endif
+}
+
+void app_perf_baseline_record_thermal_soft_timeout(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_thermal_pair_soft_timeout_count++;
+#endif
+}
+
+void app_perf_baseline_record_thermal_back_slot_null(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_thermal_pair_back_slot_null_count++;
 #endif
 }
 
@@ -1378,6 +1461,7 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->dma_timeout_count = s_dma_timeout_count;
     snapshot->thermal_backoff_count = s_thermal_backoff_count;
     snapshot->thermal_pair_timeout_count = s_thermal_pair_timeout_count;
+    snapshot->thermal_pair_grace_ok_count = s_thermal_pair_grace_ok_count;
     snapshot->thermal_pair_compose_ok_count = s_thermal_pair_compose_ok_count;
     snapshot->thermal_pair_wait_other_count = s_thermal_pair_wait_other_count;
     snapshot->thermal_pair_last_result = s_thermal_pair_last_result;
@@ -1386,12 +1470,18 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->thermal_pair_last_gap_ms = s_thermal_pair_last_gap_ms;
     snapshot->thermal_pair_timeout_gap_last_ms = s_thermal_pair_timeout_gap_last_ms;
     snapshot->thermal_pair_timeout_gap_max_ms = s_thermal_pair_timeout_gap_max_ms;
+    snapshot->thermal_pair_timeout_gap_80_120_count = s_thermal_pair_timeout_gap_80_120_count;
+    snapshot->thermal_pair_timeout_gap_120_160_count = s_thermal_pair_timeout_gap_120_160_count;
+    snapshot->thermal_pair_timeout_gap_160_240_count = s_thermal_pair_timeout_gap_160_240_count;
+    snapshot->thermal_pair_timeout_gap_240_plus_count = s_thermal_pair_timeout_gap_240_plus_count;
     snapshot->thermal_pair_compose_gap_last_ms = s_thermal_pair_compose_gap_last_ms;
     snapshot->thermal_pair_compose_gap_max_ms = s_thermal_pair_compose_gap_max_ms;
     snapshot->thermal_pair_same_subpage_streak_last = s_thermal_pair_same_subpage_streak_last;
     snapshot->thermal_pair_same_subpage_streak_max = s_thermal_pair_same_subpage_streak_max;
     snapshot->thermal_pair_timeout_get_temp_last_us = s_thermal_pair_timeout_get_temp_last_us;
     snapshot->thermal_pair_timeout_step_last_us = s_thermal_pair_timeout_step_last_us;
+    snapshot->thermal_pair_soft_timeout_count = s_thermal_pair_soft_timeout_count;
+    snapshot->thermal_pair_back_slot_null_count = s_thermal_pair_back_slot_null_count;
     snapshot->thermal_ready_replace_count = s_thermal_ready_replace_count;
     snapshot->thermal_display_cancel_count = s_thermal_display_cancel_count;
     snapshot->thermal_3d_sync_present_attempt_count = s_thermal_3d_sync_present_attempt_count;

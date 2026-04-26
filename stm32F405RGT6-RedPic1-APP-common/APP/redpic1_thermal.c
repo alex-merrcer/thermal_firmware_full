@@ -128,6 +128,13 @@
     #define REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE 0U
 #endif
 
+#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE != 0U) && \
+    (REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ENABLE != 0U)
+    #define REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ACTIVE 1U
+#else
+    #define REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ACTIVE 0U
+#endif
+
 #if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
     #define REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ACTIVE 1U
 #else
@@ -769,6 +776,7 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
     uint8_t other_subpage = (uint8_t)(subpage ^ 0x01U);
     uint16_t pixel_index = 0U;
     uint32_t gap_ms = 0U;
+    uint8_t pair_grace_ok = 0U;
 
     if (frame_data == 0 || subpage > 1U)
     {
@@ -799,6 +807,14 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
     if (s_v4_subpage_valid[other_subpage] != 0U &&
         gap_ms > REDPIC1_THERMAL_STAGEV4_C1_SUBPAGE_MAX_AGE_MS)
     {
+#if REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ACTIVE
+        if (gap_ms <= REDPIC1_THERMAL_STAGEV4_C1_SUBPAGE_GRACE_AGE_MS)
+        {
+            pair_grace_ok = 1U;
+        }
+        else
+#endif
+        {
         app_perf_baseline_record_thermal_pair_timeout_detail(subpage,
                                                              other_subpage,
                                                              gap_ms,
@@ -807,6 +823,7 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
                                                              step_elapsed_us);
         s_v4_subpage_valid[other_subpage] = 0U;
         s_v4_subpage_tick_ms[other_subpage] = 0U;
+        }
     }
 
     if (s_v4_subpage_valid[other_subpage] == 0U)
@@ -831,10 +848,20 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
                                s_v4_subpage_tick_ms[other_subpage];
     }
 
-    app_perf_baseline_record_thermal_pair_compose_ok(subpage,
-                                                     other_subpage,
-                                                     gap_ms,
-                                                     s_v4_pair_same_subpage_streak);
+    if (pair_grace_ok != 0U)
+    {
+        app_perf_baseline_record_thermal_pair_grace_ok(subpage,
+                                                       other_subpage,
+                                                       gap_ms,
+                                                       s_v4_pair_same_subpage_streak);
+    }
+    else
+    {
+        app_perf_baseline_record_thermal_pair_compose_ok(subpage,
+                                                         other_subpage,
+                                                         gap_ms,
+                                                         s_v4_pair_same_subpage_streak);
+    }
 
     return 1U;
 }
@@ -2119,6 +2146,7 @@ void redpic1_thermal_step(void)
         back_slot = redpic1_thermal_get_back_slot();
         if (back_slot == 0)
         {
+            app_perf_baseline_record_thermal_back_slot_null();
             redpic1_thermal_note_backoff(0U);
             app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
             return;
@@ -2143,6 +2171,7 @@ void redpic1_thermal_step(void)
             {
                 /* 软超时 (MLX90640_READY_WAIT_TIMEOUT_ERROR): 
                  * 仅表示新帧物理上还没准备好，释放槽位，静默退出，不作惩罚 */
+                app_perf_baseline_record_thermal_soft_timeout();
                 redpic1_thermal_release_back_slot(back_slot);
                 redpic1_thermal_note_backoff(0U);
             }
