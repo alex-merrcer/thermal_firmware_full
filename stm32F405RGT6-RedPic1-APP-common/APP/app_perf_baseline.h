@@ -61,6 +61,14 @@ typedef enum
     APP_PERF_I2C_POLL_PHASE_BYTE_TRANSMITTED
 } app_perf_i2c_poll_phase_t;
 
+typedef enum
+{
+    APP_PERF_THERMAL_PAIR_RESULT_NONE = 0,
+    APP_PERF_THERMAL_PAIR_RESULT_WAIT_OTHER,
+    APP_PERF_THERMAL_PAIR_RESULT_TIMEOUT,
+    APP_PERF_THERMAL_PAIR_RESULT_COMPOSE_OK
+} app_perf_thermal_pair_result_t;
+
 typedef struct
 {
     uint8_t enabled;
@@ -175,6 +183,20 @@ typedef struct
     uint32_t dma_timeout_count;
     uint32_t thermal_backoff_count;
     uint32_t thermal_pair_timeout_count;
+    uint32_t thermal_pair_compose_ok_count;
+    uint32_t thermal_pair_wait_other_count;
+    uint32_t thermal_pair_last_result;
+    uint32_t thermal_pair_last_subpage;
+    uint32_t thermal_pair_last_missing_subpage;
+    uint32_t thermal_pair_last_gap_ms;
+    uint32_t thermal_pair_timeout_gap_last_ms;
+    uint32_t thermal_pair_timeout_gap_max_ms;
+    uint32_t thermal_pair_compose_gap_last_ms;
+    uint32_t thermal_pair_compose_gap_max_ms;
+    uint32_t thermal_pair_same_subpage_streak_last;
+    uint32_t thermal_pair_same_subpage_streak_max;
+    uint32_t thermal_pair_timeout_get_temp_last_us;
+    uint32_t thermal_pair_timeout_step_last_us;
     uint32_t thermal_ready_replace_count;
     uint32_t thermal_display_cancel_count;
     uint32_t thermal_3d_sync_present_attempt_count;
@@ -256,6 +278,20 @@ void app_perf_baseline_record_i2c_poll_busy_timeout(app_perf_i2c_poll_path_t pat
 void app_perf_baseline_record_i2c_er_timeout(void);
 void app_perf_baseline_record_thermal_backoff(void);
 void app_perf_baseline_record_thermal_pair_timeout(void);
+void app_perf_baseline_record_thermal_pair_wait_other(uint8_t subpage,
+                                                      uint8_t missing_subpage,
+                                                      uint32_t gap_ms,
+                                                      uint32_t same_subpage_streak);
+void app_perf_baseline_record_thermal_pair_timeout_detail(uint8_t subpage,
+                                                          uint8_t missing_subpage,
+                                                          uint32_t gap_ms,
+                                                          uint32_t same_subpage_streak,
+                                                          uint32_t get_temp_elapsed_us,
+                                                          uint32_t step_elapsed_us);
+void app_perf_baseline_record_thermal_pair_compose_ok(uint8_t subpage,
+                                                      uint8_t other_subpage,
+                                                      uint32_t gap_ms,
+                                                      uint32_t same_subpage_streak);
 void app_perf_baseline_record_thermal_ready_replace(void);
 void app_perf_baseline_record_thermal_display_cancel(void);
 void app_perf_baseline_record_thermal_3d_sync_present_attempt(void);

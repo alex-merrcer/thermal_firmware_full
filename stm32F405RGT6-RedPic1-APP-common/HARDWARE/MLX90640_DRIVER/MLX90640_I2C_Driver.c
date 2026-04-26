@@ -695,13 +695,18 @@ static int MLX90640_I2CWritePollingLocked(uint8_t slaveAddr, uint16_t writeAddre
     }
 
     I2C_Send7bitAddress(I2Cx, sa, I2C_Direction_Transmitter);
-    MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
-    error = MLX90640_I2CWaitEvent(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
+//    MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
+//    error = MLX90640_I2CWaitEvent(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
+			MLX90640_I2CPollDiagSetPhase(APP_PERF_I2C_POLL_PHASE_ADDR_W,
+																	 MLX90640_I2C_WAIT_FLAG_EVENT_BASE | I2C_FLAG_ADDR);
+			error = MLX90640_I2CWaitFlag(I2C_FLAG_ADDR);		
     if (error != 0)
     {
         return error;
     }
-
+		
+		MLX90640_I2CClearAddrFlag();
+		
     for (index = 0; index < 4; ++index)
     {
         I2C_SendData(I2Cx, cmd[index]);

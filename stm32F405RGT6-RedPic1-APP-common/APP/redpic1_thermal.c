@@ -287,6 +287,8 @@ static CCMRAM uint8_t s_diag_pattern_frame[REDPIC1_THERMAL_PIXEL_COUNT];       /
 static CCMRAM float s_v4_subpage_temp_frame[2][REDPIC1_THERMAL_PIXEL_COUNT];
 static uint32_t s_v4_subpage_tick_ms[2] = { 0U, 0U };
 static uint8_t  s_v4_subpage_valid[2] = { 0U, 0U };
+static uint8_t  s_v4_pair_last_arrived_subpage = 0xFFU;
+static uint32_t s_v4_pair_same_subpage_streak = 0U;
 #endif
 
 static void redpic1_thermal_free_slot_locked(uint8_t slot_index);
@@ -743,6 +745,8 @@ static void redpic1_thermal_reset_processing_history(void)
     s_v4_subpage_tick_ms[1] = 0U;
     s_v4_subpage_valid[0] = 0U;
     s_v4_subpage_valid[1] = 0U;
+    s_v4_pair_last_arrived_subpage = 0xFFU;
+    s_v4_pair_same_subpage_streak = 0U;
 #endif
 }
 
@@ -758,14 +762,27 @@ static uint8_t redpic1_thermal_stagev4_c1_pixel_subpage(uint16_t pixel_index)
 static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
                                                       uint8_t subpage,
                                                       uint32_t capture_tick_ms,
+                                                      uint32_t get_temp_elapsed_us,
+                                                      uint32_t step_elapsed_us,
                                                       uint32_t *out_capture_tick_ms)
 {
     uint8_t other_subpage = (uint8_t)(subpage ^ 0x01U);
     uint16_t pixel_index = 0U;
+    uint32_t gap_ms = 0U;
 
     if (frame_data == 0 || subpage > 1U)
     {
         return 0U;
+    }
+
+    if (s_v4_pair_last_arrived_subpage == subpage)
+    {
+        s_v4_pair_same_subpage_streak++;
+    }
+    else
+    {
+        s_v4_pair_last_arrived_subpage = subpage;
+        s_v4_pair_same_subpage_streak = 1U;
     }
 
     memcpy(s_v4_subpage_temp_frame[subpage],
@@ -774,16 +791,30 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
     s_v4_subpage_tick_ms[subpage] = capture_tick_ms;
     s_v4_subpage_valid[subpage] = 1U;
 
-    if (s_v4_subpage_valid[other_subpage] != 0U &&
-        (capture_tick_ms - s_v4_subpage_tick_ms[other_subpage]) > REDPIC1_THERMAL_STAGEV4_C1_SUBPAGE_MAX_AGE_MS)
+    if (s_v4_subpage_valid[other_subpage] != 0U)
     {
-        app_perf_baseline_record_thermal_pair_timeout();
+        gap_ms = capture_tick_ms - s_v4_subpage_tick_ms[other_subpage];
+    }
+
+    if (s_v4_subpage_valid[other_subpage] != 0U &&
+        gap_ms > REDPIC1_THERMAL_STAGEV4_C1_SUBPAGE_MAX_AGE_MS)
+    {
+        app_perf_baseline_record_thermal_pair_timeout_detail(subpage,
+                                                             other_subpage,
+                                                             gap_ms,
+                                                             s_v4_pair_same_subpage_streak,
+                                                             get_temp_elapsed_us,
+                                                             step_elapsed_us);
         s_v4_subpage_valid[other_subpage] = 0U;
         s_v4_subpage_tick_ms[other_subpage] = 0U;
     }
 
     if (s_v4_subpage_valid[other_subpage] == 0U)
     {
+        app_perf_baseline_record_thermal_pair_wait_other(subpage,
+                                                         other_subpage,
+                                                         gap_ms,
+                                                         s_v4_pair_same_subpage_streak);
         return 0U;
     }
 
@@ -799,6 +830,11 @@ static uint8_t redpic1_thermal_stagev4_c1_try_compose(float *frame_data,
                                s_v4_subpage_tick_ms[subpage] :
                                s_v4_subpage_tick_ms[other_subpage];
     }
+
+    app_perf_baseline_record_thermal_pair_compose_ok(subpage,
+                                                     other_subpage,
+                                                     gap_ms,
+                                                     s_v4_pair_same_subpage_streak);
 
     return 1U;
 }
@@ -2043,6 +2079,8 @@ void redpic1_thermal_step(void)
         uint8_t captured_subpage = 0U;
         uint32_t capture_tick_ms = 0U;
         uint32_t now_ms = power_manager_get_tick_ms();
+        uint32_t get_temp_elapsed_us = 0U;
+        int temp_status = 0;
 
 #if REDPIC1_THERMAL_DIAG_MODE == REDPIC1_THERMAL_DIAG_MODE_TEST_PATTERN
         redpic1_thermal_present_diag_pattern();
@@ -2090,14 +2128,15 @@ void redpic1_thermal_step(void)
         
         /* ============== 6R_2 核心优化点：分离软超时与硬故障 ============== */
 #if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
-        int temp_status = get_temp_ex(back_slot->temp_frame, &ta, &captured_subpage);
+        temp_status = get_temp_ex(back_slot->temp_frame, &ta, &captured_subpage);
 #else
-        int temp_status = get_temp(back_slot->temp_frame, &ta);
+        temp_status = get_temp(back_slot->temp_frame, &ta);
 #endif
         
         if (temp_status < 0)
         {
-            app_perf_baseline_record_get_temp_us(app_perf_baseline_elapsed_us(get_temp_start_cycle));
+            get_temp_elapsed_us = app_perf_baseline_elapsed_us(get_temp_start_cycle);
+            app_perf_baseline_record_get_temp_us(get_temp_elapsed_us);
             
 #if (REDPIC1_THERMAL_STAGE6R_2_ACTIVE != 0U)
             if (temp_status == -9) 
@@ -2121,13 +2160,16 @@ void redpic1_thermal_step(void)
         }
         /* ================================================================= */
 
-        app_perf_baseline_record_get_temp_us(app_perf_baseline_elapsed_us(get_temp_start_cycle));
+        get_temp_elapsed_us = app_perf_baseline_elapsed_us(get_temp_start_cycle);
+        app_perf_baseline_record_get_temp_us(get_temp_elapsed_us);
 
         capture_tick_ms = power_manager_get_tick_ms();
 #if REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE
         if (redpic1_thermal_stagev4_c1_try_compose(back_slot->temp_frame,
                                                    captured_subpage,
                                                    capture_tick_ms,
+                                                   get_temp_elapsed_us,
+                                                   app_perf_baseline_elapsed_us(step_start_cycle),
                                                    &capture_tick_ms) == 0U)
         {
             redpic1_thermal_release_back_slot(back_slot);

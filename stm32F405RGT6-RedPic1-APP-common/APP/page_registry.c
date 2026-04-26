@@ -341,7 +341,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_ASYNC_TIMEOUT_WIFI_MS  3000UL
 #define PAGE_ASYNC_TIMEOUT_OTA_MS   7000UL
 #define PERF_BASELINE_REFRESH_MS    250UL
-#define PERF_SUBPAGE_COUNT          11U
+#define PERF_SUBPAGE_COUNT          12U
 #define PERF_LABEL_X                12U
 #define PERF_VALUE_X                180U
 #define PERF_TIMING_VALUE_X         106U
@@ -2875,6 +2875,7 @@ static void perf_baseline_draw_layout(uint8_t enabled)
     static const char *s_i2c_dma_tc_diag_labels[4] = { "TC State", "TC NDTR", "TC SR1", "TC SR2" };
     static const char *s_i2c_timeout_src_labels[4] = { "DMAWait TMO", "PollEvt TMO", "PollBusy TMO", "ER TMO" };
     static const char *s_i2c_poll_timeout_labels[4] = { "Poll Path", "Poll Phase", "Poll Addr", "Poll Words" };
+    static const char *s_pair_diag_labels[4] = { "PairOK", "PairWait", "PairTO", "Streak" };
     static const char *s_disabled_labels[4] = { "Status", "Switch", "Action", "Scope" };
     const char **labels = s_snapshot_labels;
     uint8_t index = 0U;
@@ -2916,6 +2917,9 @@ static void perf_baseline_draw_layout(uint8_t enabled)
             break;
         case 10U:
             labels = s_i2c_poll_timeout_labels;
+            break;
+        case 11U:
+            labels = s_pair_diag_labels;
             break;
         case 0U:
         default:
@@ -3358,6 +3362,22 @@ static const char *perf_baseline_i2c_poll_phase_name(uint32_t phase)
     }
 }
 
+static const char *perf_baseline_pair_result_name(uint32_t result)
+{
+    switch ((app_perf_thermal_pair_result_t)result)
+    {
+    case APP_PERF_THERMAL_PAIR_RESULT_WAIT_OTHER:
+        return "WAIT";
+    case APP_PERF_THERMAL_PAIR_RESULT_TIMEOUT:
+        return "TMO";
+    case APP_PERF_THERMAL_PAIR_RESULT_COMPOSE_OK:
+        return "OK";
+    case APP_PERF_THERMAL_PAIR_RESULT_NONE:
+    default:
+        return "NONE";
+    }
+}
+
 static void perf_baseline_draw_i2c_dma_timeout_diag(const app_perf_baseline_snapshot_t *snapshot)
 {
     char value[24];
@@ -3526,6 +3546,80 @@ static void perf_baseline_draw_i2c_poll_timeout_detail(const app_perf_baseline_s
              "S1:%04lX S2:%04lX",
              (unsigned long)(snapshot->i2c_poll_timeout_sr1 & 0xFFFFUL),
              (unsigned long)(snapshot->i2c_poll_timeout_sr2 & 0xFFFFUL));
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
+static void perf_baseline_draw_pair_diag(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+    char subpage_text[8];
+    char missing_text[8];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->thermal_pair_compose_ok_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  value,
+                                  (snapshot->thermal_pair_compose_ok_count != 0U) ? DARKBLUE : GRAYBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->thermal_pair_wait_other_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  value,
+                                  (snapshot->thermal_pair_wait_other_count != 0U) ? DARKBLUE : GRAYBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->thermal_pair_timeout_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->thermal_pair_timeout_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value,
+             sizeof(value),
+             "%lu/%lu",
+             (unsigned long)snapshot->thermal_pair_same_subpage_streak_last,
+             (unsigned long)snapshot->thermal_pair_same_subpage_streak_max);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->thermal_pair_same_subpage_streak_max > 1U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "OKG:%lu/%lu TOG:%lu/%lu",
+             (unsigned long)snapshot->thermal_pair_compose_gap_last_ms,
+             (unsigned long)snapshot->thermal_pair_compose_gap_max_ms,
+             (unsigned long)snapshot->thermal_pair_timeout_gap_last_ms,
+             (unsigned long)snapshot->thermal_pair_timeout_gap_max_ms);
+
+    if (snapshot->thermal_pair_last_subpage <= 1U)
+    {
+        snprintf(subpage_text, sizeof(subpage_text), "%lu", (unsigned long)snapshot->thermal_pair_last_subpage);
+    }
+    else
+    {
+        snprintf(subpage_text, sizeof(subpage_text), "-");
+    }
+
+    if (snapshot->thermal_pair_last_missing_subpage <= 1U)
+    {
+        snprintf(missing_text, sizeof(missing_text), "%lu", (unsigned long)snapshot->thermal_pair_last_missing_subpage);
+    }
+    else
+    {
+        snprintf(missing_text, sizeof(missing_text), "-");
+    }
+
+    snprintf(footer2,
+             sizeof(footer2),
+             "S:%s M:%s R:%s GT:%lu ST:%lu",
+             subpage_text,
+             missing_text,
+             perf_baseline_pair_result_name(snapshot->thermal_pair_last_result),
+             (unsigned long)snapshot->thermal_pair_timeout_get_temp_last_us,
+             (unsigned long)snapshot->thermal_pair_timeout_step_last_us);
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3753,6 +3847,9 @@ static void perf_baseline_render(uint8_t full_refresh)
         break;
     case 10U:
         perf_baseline_draw_i2c_poll_timeout_detail(&snapshot);
+        break;
+    case 11U:
+        perf_baseline_draw_pair_diag(&snapshot);
         break;
     case 0U:
     default:
