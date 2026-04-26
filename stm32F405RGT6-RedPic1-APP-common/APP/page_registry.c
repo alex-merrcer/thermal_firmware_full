@@ -341,7 +341,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_ASYNC_TIMEOUT_WIFI_MS  3000UL
 #define PAGE_ASYNC_TIMEOUT_OTA_MS   7000UL
 #define PERF_BASELINE_REFRESH_MS    250UL
-#define PERF_SUBPAGE_COUNT          9U
+#define PERF_SUBPAGE_COUNT          11U
 #define PERF_LABEL_X                12U
 #define PERF_VALUE_X                180U
 #define PERF_TIMING_VALUE_X         106U
@@ -2873,6 +2873,8 @@ static void perf_baseline_draw_layout(uint8_t enabled)
     static const char *s_i2c_dma_labels[4] = { "I2C AF", "I2C BERR", "I2C ARLO", "I2C OVR" };
     static const char *s_i2c_dma_to_diag_labels[4] = { "TO State", "TO NDTR", "TO SR1", "TO SR2" };
     static const char *s_i2c_dma_tc_diag_labels[4] = { "TC State", "TC NDTR", "TC SR1", "TC SR2" };
+    static const char *s_i2c_timeout_src_labels[4] = { "DMAWait TMO", "PollEvt TMO", "PollBusy TMO", "ER TMO" };
+    static const char *s_i2c_poll_timeout_labels[4] = { "Poll Path", "Poll Phase", "Poll Addr", "Poll Words" };
     static const char *s_disabled_labels[4] = { "Status", "Switch", "Action", "Scope" };
     const char **labels = s_snapshot_labels;
     uint8_t index = 0U;
@@ -2908,6 +2910,12 @@ static void perf_baseline_draw_layout(uint8_t enabled)
             break;
         case 8U:
             labels = s_i2c_dma_tc_diag_labels;
+            break;
+        case 9U:
+            labels = s_i2c_timeout_src_labels;
+            break;
+        case 10U:
+            labels = s_i2c_poll_timeout_labels;
             break;
         case 0U:
         default:
@@ -3306,6 +3314,50 @@ static const char *perf_baseline_i2c_dma_state_name(uint32_t state)
     }
 }
 
+static const char *perf_baseline_i2c_poll_path_name(uint32_t path)
+{
+    switch ((app_perf_i2c_poll_path_t)path)
+    {
+    case APP_PERF_I2C_POLL_PATH_READ:
+        return "READ";
+    case APP_PERF_I2C_POLL_PATH_WRITE:
+        return "WRITE";
+    case APP_PERF_I2C_POLL_PATH_VERIFY_READ:
+        return "VERIFY";
+    case APP_PERF_I2C_POLL_PATH_NONE:
+    default:
+        return "NONE";
+    }
+}
+
+static const char *perf_baseline_i2c_poll_phase_name(uint32_t phase)
+{
+    switch ((app_perf_i2c_poll_phase_t)phase)
+    {
+    case APP_PERF_I2C_POLL_PHASE_WAIT_BUSY:
+        return "BUSY";
+    case APP_PERF_I2C_POLL_PHASE_START:
+        return "START";
+    case APP_PERF_I2C_POLL_PHASE_ADDR_W:
+        return "ADDRW";
+    case APP_PERF_I2C_POLL_PHASE_REG_HI:
+        return "REGHI";
+    case APP_PERF_I2C_POLL_PHASE_REG_LO:
+        return "REGLO";
+    case APP_PERF_I2C_POLL_PHASE_RESTART:
+        return "RSTR";
+    case APP_PERF_I2C_POLL_PHASE_ADDR_R:
+        return "ADDRR";
+    case APP_PERF_I2C_POLL_PHASE_BYTE_RECEIVED:
+        return "RXNE";
+    case APP_PERF_I2C_POLL_PHASE_BYTE_TRANSMITTED:
+        return "TXE";
+    case APP_PERF_I2C_POLL_PHASE_NONE:
+    default:
+        return "NONE";
+    }
+}
+
 static void perf_baseline_draw_i2c_dma_timeout_diag(const app_perf_baseline_snapshot_t *snapshot)
 {
     char value[24];
@@ -3389,6 +3441,91 @@ static void perf_baseline_draw_i2c_dma_tc_diag(const app_perf_baseline_snapshot_
              "DMAE:%lu I2:%lu",
              (unsigned long)snapshot->i2c_dma_err_count,
              (unsigned long)snapshot->i2c_failure_count);
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
+static void perf_baseline_draw_i2c_timeout_sources(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_dma_wait_timeout_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  value,
+                                  (snapshot->i2c_dma_wait_timeout_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_poll_event_timeout_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  value,
+                                  (snapshot->i2c_poll_event_timeout_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_poll_busy_timeout_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->i2c_poll_busy_timeout_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_er_timeout_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->i2c_er_timeout_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "TMO:%lu I2:%lu",
+             (unsigned long)snapshot->i2c_timeout_count,
+             (unsigned long)snapshot->i2c_failure_count);
+    snprintf(footer2,
+             sizeof(footer2),
+             "DMAE:%lu PairTO:%lu",
+             (unsigned long)snapshot->i2c_dma_err_count,
+             (unsigned long)snapshot->thermal_pair_timeout_count);
+    perf_baseline_draw_footer_text(footer1, footer2);
+}
+
+static void perf_baseline_draw_i2c_poll_timeout_detail(const app_perf_baseline_snapshot_t *snapshot)
+{
+    char value[24];
+    char footer1[40];
+    char footer2[40];
+
+    if (snapshot == 0)
+    {
+        return;
+    }
+
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U),
+                                  perf_baseline_i2c_poll_path_name(snapshot->i2c_poll_timeout_path),
+                                  (snapshot->i2c_poll_timeout_path != 0U) ? RED : DARKBLUE);
+
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 1U),
+                                  perf_baseline_i2c_poll_phase_name(snapshot->i2c_poll_timeout_phase),
+                                  (snapshot->i2c_poll_timeout_phase != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "0x%04lX", (unsigned long)(snapshot->i2c_poll_timeout_start_addr & 0xFFFFUL));
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 2U),
+                                  value,
+                                  (snapshot->i2c_poll_timeout_start_addr != 0U) ? RED : DARKBLUE);
+
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->i2c_poll_timeout_word_count);
+    perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 3U),
+                                  value,
+                                  (snapshot->i2c_poll_timeout_word_count != 0U) ? RED : DARKBLUE);
+
+    snprintf(footer1,
+             sizeof(footer1),
+             "Evt:0x%lX",
+             (unsigned long)snapshot->i2c_poll_timeout_event);
+    snprintf(footer2,
+             sizeof(footer2),
+             "S1:%04lX S2:%04lX",
+             (unsigned long)(snapshot->i2c_poll_timeout_sr1 & 0xFFFFUL),
+             (unsigned long)(snapshot->i2c_poll_timeout_sr2 & 0xFFFFUL));
     perf_baseline_draw_footer_text(footer1, footer2);
 }
 
@@ -3610,6 +3747,12 @@ static void perf_baseline_render(uint8_t full_refresh)
         break;
     case 8U:
         perf_baseline_draw_i2c_dma_tc_diag(&snapshot);
+        break;
+    case 9U:
+        perf_baseline_draw_i2c_timeout_sources(&snapshot);
+        break;
+    case 10U:
+        perf_baseline_draw_i2c_poll_timeout_detail(&snapshot);
         break;
     case 0U:
     default:

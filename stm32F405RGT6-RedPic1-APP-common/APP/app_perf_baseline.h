@@ -39,6 +39,28 @@ typedef enum
     APP_PERF_I2C_ERROR_DMA_ERR
 } app_perf_i2c_error_t;
 
+typedef enum
+{
+    APP_PERF_I2C_POLL_PATH_NONE = 0,
+    APP_PERF_I2C_POLL_PATH_READ,
+    APP_PERF_I2C_POLL_PATH_WRITE,
+    APP_PERF_I2C_POLL_PATH_VERIFY_READ
+} app_perf_i2c_poll_path_t;
+
+typedef enum
+{
+    APP_PERF_I2C_POLL_PHASE_NONE = 0,
+    APP_PERF_I2C_POLL_PHASE_WAIT_BUSY,
+    APP_PERF_I2C_POLL_PHASE_START,
+    APP_PERF_I2C_POLL_PHASE_ADDR_W,
+    APP_PERF_I2C_POLL_PHASE_REG_HI,
+    APP_PERF_I2C_POLL_PHASE_REG_LO,
+    APP_PERF_I2C_POLL_PHASE_RESTART,
+    APP_PERF_I2C_POLL_PHASE_ADDR_R,
+    APP_PERF_I2C_POLL_PHASE_BYTE_RECEIVED,
+    APP_PERF_I2C_POLL_PHASE_BYTE_TRANSMITTED
+} app_perf_i2c_poll_phase_t;
+
 typedef struct
 {
     uint8_t enabled;
@@ -139,6 +161,17 @@ typedef struct
     uint32_t i2c_dma_tc_sr2;
     uint32_t i2c_dma_ev_irq_count;
     uint32_t i2c_dma_tc_irq_count;
+    uint32_t i2c_dma_wait_timeout_count;
+    uint32_t i2c_poll_event_timeout_count;
+    uint32_t i2c_poll_busy_timeout_count;
+    uint32_t i2c_er_timeout_count;
+    uint32_t i2c_poll_timeout_path;
+    uint32_t i2c_poll_timeout_phase;
+    uint32_t i2c_poll_timeout_event;
+    uint32_t i2c_poll_timeout_sr1;
+    uint32_t i2c_poll_timeout_sr2;
+    uint32_t i2c_poll_timeout_start_addr;
+    uint32_t i2c_poll_timeout_word_count;
     uint32_t dma_timeout_count;
     uint32_t thermal_backoff_count;
     uint32_t thermal_pair_timeout_count;
@@ -207,6 +240,20 @@ void app_perf_baseline_record_i2c_dma_tc_snapshot(uint16_t ndtr,
                                                   uint32_t sr2);
 void app_perf_baseline_record_i2c_dma_ev_irq(void);
 void app_perf_baseline_record_i2c_dma_tc_irq(void);
+void app_perf_baseline_record_i2c_dma_wait_timeout(void);
+void app_perf_baseline_record_i2c_poll_event_timeout(app_perf_i2c_poll_path_t path,
+                                                     app_perf_i2c_poll_phase_t phase,
+                                                     uint32_t event,
+                                                     uint16_t start_addr,
+                                                     uint16_t word_count,
+                                                     uint32_t sr1,
+                                                     uint32_t sr2);
+void app_perf_baseline_record_i2c_poll_busy_timeout(app_perf_i2c_poll_path_t path,
+                                                    uint16_t start_addr,
+                                                    uint16_t word_count,
+                                                    uint32_t sr1,
+                                                    uint32_t sr2);
+void app_perf_baseline_record_i2c_er_timeout(void);
 void app_perf_baseline_record_thermal_backoff(void);
 void app_perf_baseline_record_thermal_pair_timeout(void);
 void app_perf_baseline_record_thermal_ready_replace(void);

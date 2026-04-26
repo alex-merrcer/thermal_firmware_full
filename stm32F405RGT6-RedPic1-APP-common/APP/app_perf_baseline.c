@@ -58,6 +58,17 @@ static volatile uint32_t s_i2c_dma_tc_sr1 = 0U;
 static volatile uint32_t s_i2c_dma_tc_sr2 = 0U;
 static volatile uint32_t s_i2c_dma_ev_irq_count = 0U;
 static volatile uint32_t s_i2c_dma_tc_irq_count = 0U;
+static volatile uint32_t s_i2c_dma_wait_timeout_count = 0U;
+static volatile uint32_t s_i2c_poll_event_timeout_count = 0U;
+static volatile uint32_t s_i2c_poll_busy_timeout_count = 0U;
+static volatile uint32_t s_i2c_er_timeout_count = 0U;
+static volatile uint32_t s_i2c_poll_timeout_path = 0U;
+static volatile uint32_t s_i2c_poll_timeout_phase = 0U;
+static volatile uint32_t s_i2c_poll_timeout_event = 0U;
+static volatile uint32_t s_i2c_poll_timeout_sr1 = 0U;
+static volatile uint32_t s_i2c_poll_timeout_sr2 = 0U;
+static volatile uint32_t s_i2c_poll_timeout_start_addr = 0U;
+static volatile uint32_t s_i2c_poll_timeout_word_count = 0U;
 static volatile uint32_t s_dma_timeout_count = 0U;
 static volatile uint32_t s_thermal_backoff_count = 0U;
 static volatile uint32_t s_thermal_pair_timeout_count = 0U;
@@ -226,6 +237,17 @@ void app_perf_baseline_reset(void)
     s_i2c_dma_tc_sr2 = 0U;
     s_i2c_dma_ev_irq_count = 0U;
     s_i2c_dma_tc_irq_count = 0U;
+    s_i2c_dma_wait_timeout_count = 0U;
+    s_i2c_poll_event_timeout_count = 0U;
+    s_i2c_poll_busy_timeout_count = 0U;
+    s_i2c_er_timeout_count = 0U;
+    s_i2c_poll_timeout_path = 0U;
+    s_i2c_poll_timeout_phase = 0U;
+    s_i2c_poll_timeout_event = 0U;
+    s_i2c_poll_timeout_sr1 = 0U;
+    s_i2c_poll_timeout_sr2 = 0U;
+    s_i2c_poll_timeout_start_addr = 0U;
+    s_i2c_poll_timeout_word_count = 0U;
     s_dma_timeout_count = 0U;
     s_thermal_backoff_count = 0U;
     s_thermal_pair_timeout_count = 0U;
@@ -656,6 +678,72 @@ void app_perf_baseline_record_i2c_dma_tc_irq(void)
 #endif
 }
 
+void app_perf_baseline_record_i2c_dma_wait_timeout(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_dma_wait_timeout_count++;
+#endif
+}
+
+void app_perf_baseline_record_i2c_poll_event_timeout(app_perf_i2c_poll_path_t path,
+                                                     app_perf_i2c_poll_phase_t phase,
+                                                     uint32_t event,
+                                                     uint16_t start_addr,
+                                                     uint16_t word_count,
+                                                     uint32_t sr1,
+                                                     uint32_t sr2)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_poll_event_timeout_count++;
+    s_i2c_poll_timeout_path = (uint32_t)path;
+    s_i2c_poll_timeout_phase = (uint32_t)phase;
+    s_i2c_poll_timeout_event = event;
+    s_i2c_poll_timeout_sr1 = sr1;
+    s_i2c_poll_timeout_sr2 = sr2;
+    s_i2c_poll_timeout_start_addr = (uint32_t)start_addr;
+    s_i2c_poll_timeout_word_count = (uint32_t)word_count;
+#else
+    (void)path;
+    (void)phase;
+    (void)event;
+    (void)start_addr;
+    (void)word_count;
+    (void)sr1;
+    (void)sr2;
+#endif
+}
+
+void app_perf_baseline_record_i2c_poll_busy_timeout(app_perf_i2c_poll_path_t path,
+                                                    uint16_t start_addr,
+                                                    uint16_t word_count,
+                                                    uint32_t sr1,
+                                                    uint32_t sr2)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_poll_busy_timeout_count++;
+    s_i2c_poll_timeout_path = (uint32_t)path;
+    s_i2c_poll_timeout_phase = (uint32_t)APP_PERF_I2C_POLL_PHASE_WAIT_BUSY;
+    s_i2c_poll_timeout_event = 0U;
+    s_i2c_poll_timeout_sr1 = sr1;
+    s_i2c_poll_timeout_sr2 = sr2;
+    s_i2c_poll_timeout_start_addr = (uint32_t)start_addr;
+    s_i2c_poll_timeout_word_count = (uint32_t)word_count;
+#else
+    (void)path;
+    (void)start_addr;
+    (void)word_count;
+    (void)sr1;
+    (void)sr2;
+#endif
+}
+
+void app_perf_baseline_record_i2c_er_timeout(void)
+{
+#if APP_PERF_BASELINE_ENABLE
+    s_i2c_er_timeout_count++;
+#endif
+}
+
 void app_perf_baseline_record_thermal_backoff(void)
 {
 #if APP_PERF_BASELINE_ENABLE
@@ -958,6 +1046,17 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->i2c_dma_tc_sr2 = s_i2c_dma_tc_sr2;
     snapshot->i2c_dma_ev_irq_count = s_i2c_dma_ev_irq_count;
     snapshot->i2c_dma_tc_irq_count = s_i2c_dma_tc_irq_count;
+    snapshot->i2c_dma_wait_timeout_count = s_i2c_dma_wait_timeout_count;
+    snapshot->i2c_poll_event_timeout_count = s_i2c_poll_event_timeout_count;
+    snapshot->i2c_poll_busy_timeout_count = s_i2c_poll_busy_timeout_count;
+    snapshot->i2c_er_timeout_count = s_i2c_er_timeout_count;
+    snapshot->i2c_poll_timeout_path = s_i2c_poll_timeout_path;
+    snapshot->i2c_poll_timeout_phase = s_i2c_poll_timeout_phase;
+    snapshot->i2c_poll_timeout_event = s_i2c_poll_timeout_event;
+    snapshot->i2c_poll_timeout_sr1 = s_i2c_poll_timeout_sr1;
+    snapshot->i2c_poll_timeout_sr2 = s_i2c_poll_timeout_sr2;
+    snapshot->i2c_poll_timeout_start_addr = s_i2c_poll_timeout_start_addr;
+    snapshot->i2c_poll_timeout_word_count = s_i2c_poll_timeout_word_count;
     snapshot->dma_timeout_count = s_dma_timeout_count;
     snapshot->thermal_backoff_count = s_thermal_backoff_count;
     snapshot->thermal_pair_timeout_count = s_thermal_pair_timeout_count;
