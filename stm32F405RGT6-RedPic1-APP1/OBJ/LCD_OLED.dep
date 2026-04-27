@@ -50,7 +50,7 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\mpu_wrappers.h)(0x69E
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\queue.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\task.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\list.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\clock_profile_service.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\power_manager.h)(0x69ED0353)
 F (..\..\stm32F405RGT6-RedPic1-APP-common\USER\stm32f4xx_it.c)(0x69ED0353)(--c99 -c --cpu Cortex-M4.fp -g -O0 --apcs=interwork -I ..\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\core -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus -I ..\..\stm32F405RGT6-RedPic1-APP-common\CORE -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\delay -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\sys -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\usart -I ..\..\stm32F405RGT6-RedPic1-APP-common\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\board -I ..\..\stm32F405RGT6-RedPic1-APP-common\FWLIB\inc -I ..\..\stm32F405RGT6-RedPic1-APP-common\DSP_LIB\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\mlx90640 -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\watchdog -I ..\..\protocol -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\battery -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\diagnostics -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\portable\RVDS\ARM_CM4F-I.\RTE\_OLED-IF:\keil5\ARM\PACK\Keil\STM32F4xx_DFP\2.17.1\Drivers\CMSIS\Device\ST\STM32F4xx\Include-IF:\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="525" -DSTM32F405xx -DSTM32F40_41xxx -DUSE_STDPERIPH_DRIVER -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -DARM_MATH_CM4 -D__CC_ARM -D__FPU_PRESENT="1" -DINCLUDE_uxTaskGetStackHighWaterMark="1"-o ..\obj\stm32f4xx_it.o --omf_browse ..\obj\stm32f4xx_it.crf --depend ..\obj\stm32f4xx_it.d)
@@ -340,7 +340,7 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\mpu_wrappers.h)(0x69E
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\queue.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\task.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\list.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\clock_profile_service.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\power_manager.h)(0x69ED0353)
 I (F:\keil5\ARM\ARMCC\include\string.h)(0x599ECD2C)
@@ -752,7 +752,7 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\list.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\APP\core\redpic1_app.h)(0x69EE4A76)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus\app_service_bus.h)(0x69EE4A3B)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\queue.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 F (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal\thermal_capture.c)(0x69EEF4C6)(--c99 -c --cpu Cortex-M4.fp -g -O0 --apcs=interwork -I ..\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\core -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus -I ..\..\stm32F405RGT6-RedPic1-APP-common\CORE -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\delay -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\sys -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\usart -I ..\..\stm32F405RGT6-RedPic1-APP-common\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\board -I ..\..\stm32F405RGT6-RedPic1-APP-common\FWLIB\inc -I ..\..\stm32F405RGT6-RedPic1-APP-common\DSP_LIB\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\mlx90640 -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\watchdog -I ..\..\protocol -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\battery -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\diagnostics -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\portable\RVDS\ARM_CM4F-I.\RTE\_OLED-IF:\keil5\ARM\PACK\Keil\STM32F4xx_DFP\2.17.1\Drivers\CMSIS\Device\ST\STM32F4xx\Include-IF:\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="525" -DSTM32F405xx -DSTM32F40_41xxx -DUSE_STDPERIPH_DRIVER -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -DARM_MATH_CM4 -D__CC_ARM -D__FPU_PRESENT="1" -DINCLUDE_uxTaskGetStackHighWaterMark="1"-o ..\obj\thermal_capture.o --omf_browse ..\obj\thermal_capture.crf --depend ..\obj\thermal_capture.d)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal\thermal_capture.h)(0x69EED377)
 I (F:\keil5\ARM\ARMCC\include\stdint.h)(0x599ECD2E)
@@ -922,7 +922,7 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\mpu_wrappers.h)(0x69E
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\queue.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\task.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\list.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\clock_profile_service.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\power_manager.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui\app_display_runtime.h)(0x69EEE84F)
@@ -1026,7 +1026,7 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\mpu_wrappers.h)(0x69E
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\queue.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\task.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\list.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\clock_profile_service.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\power_manager.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui\ui_manager.h)(0x69ED0353)
@@ -1096,7 +1096,7 @@ F (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host\esp_sync_service.c)(
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host\esp_sync_service.h)(0x69EE4D67)
 I (F:\keil5\ARM\ARMCC\include\stdint.h)(0x599ECD2E)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\power_manager.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\clock_profile_service.h)(0x69ED0353)
 I (F:\keil5\ARM\ARMCC\include\string.h)(0x599ECD2C)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host\esp_host_service_priv.h)(0x69ED0353)
@@ -1279,7 +1279,7 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\mpu_wrappers.h)(0x69E
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\queue.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\task.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include\list.h)(0x69ED0353)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal\redpic1_thermal.h)(0x69EEF4AA)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display\lcd_init.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\rtc_lp_service.h)(0x69ED0353)
@@ -1616,8 +1616,8 @@ I (..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input\key.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota\ota_service.h)(0x69ED0353)
 I (..\..\protocol\boot_info_v3.h)(0x69CB3476)
 I (..\..\protocol\ota_ctrl_protocol.h)(0x69EB68AC)
-F (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.c)(0x69ED0353)(--c99 -c --cpu Cortex-M4.fp -g -O0 --apcs=interwork -I ..\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\core -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus -I ..\..\stm32F405RGT6-RedPic1-APP-common\CORE -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\delay -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\sys -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\usart -I ..\..\stm32F405RGT6-RedPic1-APP-common\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\board -I ..\..\stm32F405RGT6-RedPic1-APP-common\FWLIB\inc -I ..\..\stm32F405RGT6-RedPic1-APP-common\DSP_LIB\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\mlx90640 -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\watchdog -I ..\..\protocol -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\battery -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\diagnostics -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\portable\RVDS\ARM_CM4F-I.\RTE\_OLED-IF:\keil5\ARM\PACK\Keil\STM32F4xx_DFP\2.17.1\Drivers\CMSIS\Device\ST\STM32F4xx\Include-IF:\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="525" -DSTM32F405xx -DSTM32F40_41xxx -DUSE_STDPERIPH_DRIVER -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -DARM_MATH_CM4 -D__CC_ARM -D__FPU_PRESENT="1" -DINCLUDE_uxTaskGetStackHighWaterMark="1"-o ..\obj\settings_service.o --omf_browse ..\obj\settings_service.crf --depend ..\obj\settings_service.d)
-I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69ED0353)
+F (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.c)(0x69EF9277)(--c99 -c --cpu Cortex-M4.fp -g -O0 --apcs=interwork -I ..\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\core -I ..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus -I ..\..\stm32F405RGT6-RedPic1-APP-common\CORE -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\delay -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\sys -I ..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\usart -I ..\..\stm32F405RGT6-RedPic1-APP-common\USER -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\board -I ..\..\stm32F405RGT6-RedPic1-APP-common\FWLIB\inc -I ..\..\stm32F405RGT6-RedPic1-APP-common\DSP_LIB\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\mlx90640 -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\watchdog -I ..\..\protocol -I ..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\battery -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\diagnostics -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power -I ..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include -I ..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\portable\RVDS\ARM_CM4F-I.\RTE\_OLED-IF:\keil5\ARM\PACK\Keil\STM32F4xx_DFP\2.17.1\Drivers\CMSIS\Device\ST\STM32F4xx\Include-IF:\keil5\ARM\CMSIS\Include-D__UVISION_VERSION="525" -DSTM32F405xx -DSTM32F40_41xxx -DUSE_STDPERIPH_DRIVER -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING -DARM_MATH_CM4 -D__CC_ARM -D__FPU_PRESENT="1" -DINCLUDE_uxTaskGetStackHighWaterMark="1"-o ..\obj\settings_service.o --omf_browse ..\obj\settings_service.crf --depend ..\obj\settings_service.d)
+I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings\settings_service.h)(0x69EF9277)
 I (F:\keil5\ARM\ARMCC\include\stdint.h)(0x599ECD2E)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\clock_profile_service.h)(0x69ED0353)
 I (..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power\power_manager.h)(0x69ED0353)

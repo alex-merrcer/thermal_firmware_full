@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const https = require("https");
 const { URL } = require("url");
 
-const { ALIYUN_IOT_CONFIG } = require("./config");
+const { ALIYUN_IOT_CONFIG, WEATHER_CONFIG } = require("./config");
 
 cloud.init({
   env: cloud.DYNAMIC_CURRENT_ENV,
@@ -14,6 +14,10 @@ const PLACEHOLDER_VALUES = [
   "YOUR_ACCESS_KEY_SECRET",
   "YOUR_PRODUCT_KEY",
   "YOUR_DEVICE_NAME",
+];
+const WEATHER_PLACEHOLDER_VALUES = [
+  "YOUR_WEATHER_API_KEY",
+  "your_weather_api_key",
 ];
 const HISTORY_RANGE_MAP = {
   "1h": {
@@ -42,7 +46,7 @@ function isPlaceholder(value) {
   return typeof value === "string" && PLACEHOLDER_VALUES.includes(value.trim());
 }
 
-function validateConfig() {
+function validateIotConfig() {
   const missing = [];
 
   if (!ALIYUN_IOT_CONFIG.accessKeyId || isPlaceholder(ALIYUN_IOT_CONFIG.accessKeyId)) {
@@ -71,6 +75,32 @@ function validateConfig() {
   }
 
   return missing;
+}
+
+function isWeatherPlaceholder(value) {
+  return typeof value === "string" && WEATHER_PLACEHOLDER_VALUES.includes(value.trim());
+}
+
+function validateWeatherConfig() {
+  const missing = [];
+
+  if (!WEATHER_CONFIG || !WEATHER_CONFIG.baseUrl) {
+    missing.push("weather.baseUrl");
+  }
+  if (!WEATHER_CONFIG || !WEATHER_CONFIG.apiKey || isWeatherPlaceholder(WEATHER_CONFIG.apiKey)) {
+    missing.push("weather.apiKey");
+  }
+
+  return missing;
+}
+
+function buildConfigMissingResult(missingFields) {
+  return {
+    success: false,
+    errorCode: "CONFIG_MISSING",
+    message: "Fill cloudfunctions/iotBridge/config.js before deploying this function.",
+    missingFields,
+  };
 }
 
 function percentEncode(value) {
@@ -188,6 +218,58 @@ function requestJson(urlString) {
     });
     req.end();
   });
+}
+
+function normalizeWeatherEndpoint(endpoint) {
+  let normalized = typeof endpoint === "string" ? endpoint.trim() : "";
+
+  if (!normalized) {
+    normalized = "https://api.seniverse.com";
+  } else if (!/^https?:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`;
+  }
+
+  return normalized.replace(/\/+$/, "");
+}
+
+function getWeatherDefaultLocation() {
+  return (WEATHER_CONFIG && typeof WEATHER_CONFIG.defaultLocation === "string" && WEATHER_CONFIG.defaultLocation.trim()) ?
+    WEATHER_CONFIG.defaultLocation.trim() :
+    "Shanghai";
+}
+
+function buildWeatherNowUrl(location) {
+  const url = new URL(`${normalizeWeatherEndpoint(WEATHER_CONFIG.baseUrl)}/v3/weather/now.json`);
+
+  url.searchParams.set("key", WEATHER_CONFIG.apiKey);
+  url.searchParams.set("location", location);
+  url.searchParams.set("language", "zh-Hans");
+  url.searchParams.set("unit", "c");
+  return url.toString();
+}
+
+function parseWeatherNowResponse(response, requestedLocation) {
+  const results = response && Array.isArray(response.results) ? response.results : [];
+  const first = results[0] || {};
+  const location = first.location || {};
+  const now = first.now || {};
+
+  if (!first || !location.name || !now.text) {
+    throw new Error("Weather API response is missing required fields");
+  }
+
+  return {
+    requestedLocation,
+    cityName: location.name,
+    text: now.text,
+    temperatureC: Number(now.temperature),
+    feelsLikeC: Number.isFinite(Number(now.feels_like)) ? Number(now.feels_like) : null,
+    humidity: Number.isFinite(Number(now.humidity)) ? Number(now.humidity) : null,
+    windScale: now.wind_scale || "",
+    updateTime: first.last_update || "",
+    sourceText: "微信云函数",
+    fetchedAtMs: Date.now(),
+  };
 }
 
 async function callAliyunIotRpc(action, params) {
@@ -612,6 +694,19 @@ async function getDebugData() {
   };
 }
 
+async function getWeatherNow(event) {
+  const requestedLocation =
+    typeof (event && event.cityName) === "string" && event.cityName.trim() ?
+      event.cityName.trim() :
+      getWeatherDefaultLocation();
+  const response = await requestJson(buildWeatherNowUrl(requestedLocation));
+
+  return {
+    success: true,
+    data: parseWeatherNowResponse(response, requestedLocation),
+  };
+}
+
 async function ping() {
   return {
     success: true,
@@ -623,17 +718,7 @@ async function ping() {
 }
 
 exports.main = async (event) => {
-  const missing = validateConfig();
   const action = (event && event.action) || "getDashboardData";
-
-  if (missing.length > 0) {
-    return {
-      success: false,
-      errorCode: "CONFIG_MISSING",
-      message: "Fill cloudfunctions/iotBridge/config.js before deploying this function.",
-      missingFields: missing,
-    };
-  }
 
   try {
     switch (action) {
@@ -641,19 +726,40 @@ exports.main = async (event) => {
         return await ping();
 
       case "getThermalSnapshot":
+        if (validateIotConfig().length > 0) {
+          return buildConfigMissingResult(validateIotConfig());
+        }
         return await getThermalSnapshot();
 
       case "getDashboardData":
+        if (validateIotConfig().length > 0) {
+          return buildConfigMissingResult(validateIotConfig());
+        }
         return await getDashboardData(event);
 
       case "getThermalHistory":
+        if (validateIotConfig().length > 0) {
+          return buildConfigMissingResult(validateIotConfig());
+        }
         return await getThermalHistory(event);
 
       case "updateDeviceNickname":
+        if (validateIotConfig().length > 0) {
+          return buildConfigMissingResult(validateIotConfig());
+        }
         return await updateDeviceNickname(event);
 
       case "getDebugData":
+        if (validateIotConfig().length > 0) {
+          return buildConfigMissingResult(validateIotConfig());
+        }
         return await getDebugData();
+
+      case "getWeatherNow":
+        if (validateWeatherConfig().length > 0) {
+          return buildConfigMissingResult(validateWeatherConfig());
+        }
+        return await getWeatherNow(event);
 
       default:
         return {

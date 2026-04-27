@@ -14,13 +14,17 @@ const UNIT_OPTIONS = [
 const PLACEHOLDER_ITEMS = [
   {
     key: "weather",
-    title: "天气能力",
-    description: "后续会和 ESP32 阶段 7 一起接入，当前小程序先不展示天气实况。",
+    title: "天气实况",
+    description: "阶段 7 已接入云函数天气查询，可以查看城市天气，不占用 ESP32 本地链路。",
+    actionText: "进入",
+    interactive: true,
   },
   {
     key: "firmwareUpdate",
     title: "固件更新详情",
     description: "OTA 状态已经开始上云，后续会补完整的小程序升级页与版本详情。",
+    actionText: "待接入",
+    interactive: false,
   },
 ];
 
@@ -266,6 +270,22 @@ Page({
   onBleProvisionTap() {
     wx.navigateTo({
       url: "/pages/ble-provision/index",
+    });
+  },
+
+  onPlaceholderItemTap(event) {
+    const key = event.currentTarget.dataset.key;
+
+    if (key === "weather") {
+      wx.navigateTo({
+        url: "/pages/weather/index",
+      });
+      return;
+    }
+
+    wx.showToast({
+      title: "该能力还在接入中",
+      icon: "none",
     });
   },
 

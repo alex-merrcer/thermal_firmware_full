@@ -19,6 +19,11 @@
 #define APP_PRIVATE_ALIYUN_REGION_ID "cn-shanghai"
 #define APP_PRIVATE_ALIYUN_MQTT_HOST "your_instance.mqtt.iothub.aliyuncs.com"
 
+/*
+ * Weather API settings are optional now.
+ * Phase 7 defaults to mini-program/cloud-function weather, so the two macros
+ * below are only reserved for a future device-local weather mode.
+ */
 #define APP_PRIVATE_WEATHER_BASE_URL "http://api.seniverse.com"
 #define APP_PRIVATE_WEATHER_API_KEY "your_weather_api_key"
 

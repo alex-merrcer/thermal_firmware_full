@@ -1,0 +1,58 @@
+<view class="page-shell weather-page">
+  <view class="panel">
+    <view class="section-title">天气实况</view>
+    <view class="section-subtitle">
+      天气数据通过微信云函数获取，不占用 ESP32 运行链路。当前{{usingDefaultCity ? "使用云端默认城市" : "使用你保存的城市"}}。
+    </view>
+
+    <view class="input-label">城市名称</view>
+    <input
+      class="setting-input"
+      value="{{cityInput}}"
+      bindinput="onCityInput"
+      maxlength="32"
+      placeholder="留空则使用云端默认城市"
+    />
+
+    <view class="button-row">
+      <button class="primary-button" bindtap="onSaveCityTap">保存并查询</button>
+      <button class="secondary-button" bindtap="onUseDefaultCityTap">默认城市</button>
+    </view>
+  </view>
+
+  <view class="panel weather-hero">
+    <view class="weather-city">{{weather.cityName}}</view>
+    <view class="weather-text">{{weather.text}}</view>
+    <view class="weather-temp">{{weather.temperatureText}}</view>
+    <view class="weather-source">{{weather.sourceText}}</view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">详细信息</view>
+    <view class="info-row">
+      <view class="info-key">体感温度</view>
+      <view class="info-value">{{weather.feelsLikeText}}</view>
+    </view>
+    <view class="info-row">
+      <view class="info-key">湿度</view>
+      <view class="info-value">{{weather.humidityText}}</view>
+    </view>
+    <view class="info-row">
+      <view class="info-key">风力</view>
+      <view class="info-value">{{weather.windText}}</view>
+    </view>
+    <view class="info-row">
+      <view class="info-key">更新时间</view>
+      <view class="info-value">{{weather.updateText}}</view>
+    </view>
+  </view>
+
+  <button class="primary-button" bindtap="onRefreshTap" loading="{{loading}}">
+    {{loading ? "正在获取..." : "刷新天气"}}
+  </button>
+
+  <view class="error-card" wx:if="{{errorMessage}}">
+    <view class="error-title">天气获取未完成</view>
+    <view class="error-text">{{errorMessage}}</view>
+  </view>
+</view>

@@ -64,14 +64,9 @@ void redpic1_thermal_cloud_reset(void)
 
 uint8_t redpic1_thermal_cloud_pause_send_esp_enabled(void)
 {
-#if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
     device_settings_t settings;
-
     app_rtos_settings_copy(&settings);
     return settings.thermal_pause_send_esp_enabled;
-#else
-    return 0U;
-#endif
 }
 
 uint8_t redpic1_thermal_cloud_submit_snapshot_to_esp(void)

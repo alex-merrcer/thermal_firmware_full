@@ -5,6 +5,7 @@
     "pages/device/index",
     "pages/settings/index",
     "pages/ble-provision/index",
+    "pages/weather/index",
     "pages/debug/index"
   ],
   "window": {

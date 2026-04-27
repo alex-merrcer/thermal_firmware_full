@@ -77,7 +77,7 @@ static void settings_service_load_defaults(device_settings_t *settings)
     settings->esp32_remote_keys_enabled = 0U;
     settings->low_power_enabled = 1U;
     settings->standby_enabled = DEVICE_SETTINGS_DEFAULT_STANDBY_ENABLED;
-    settings->thermal_pause_send_esp_enabled = 0U;
+    settings->thermal_pause_send_esp_enabled = 1U;
     settings->power_policy = DEVICE_SETTINGS_DEFAULT_POWER_POLICY;
     settings->screen_off_timeout_ms = DEVICE_SETTINGS_DEFAULT_SCREEN_OFF_TIMEOUT_MS;
     settings->rtc_stop_wake_ms = DEVICE_SETTINGS_DEFAULT_RTC_STOP_WAKE_MS;
@@ -186,6 +186,7 @@ static uint8_t settings_blob_is_valid(const device_settings_blob_t *blob)
 
     if (blob->magic != DEVICE_SETTINGS_BLOB_MAGIC ||
         (blob->version != DEVICE_SETTINGS_BLOB_VERSION &&
+         blob->version != DEVICE_SETTINGS_BLOB_VERSION_V3 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V2 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V1) ||
         blob->size != sizeof(device_settings_blob_t))
@@ -252,6 +253,12 @@ void settings_service_init(void)
     if (settings_blob_is_valid(&blob) != 0U)
     {
         settings_from_blob(&s_settings, &blob);
+        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION)
+        {
+            /* V4 aligns the shipped product behavior: KEY2 pause-send is enabled by default. */
+            s_settings.thermal_pause_send_esp_enabled = 1U;
+            should_resave = 1U;
+        }
         if (blob.version < DEVICE_SETTINGS_BLOB_VERSION &&
             s_settings.screen_off_timeout_ms == SETTINGS_TIMEOUT_LEGACY_DEFAULT_MS)
         {

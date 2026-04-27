@@ -4,6 +4,7 @@ const DEFAULT_SETTINGS = {
   autoRefreshEnabled: false,
   autoRefreshIntervalSec: 15,
   alarmThresholdC: 50,
+  weatherCityName: "",
 };
 const ALLOWED_INTERVALS = [5, 10, 15, 30, 60];
 
@@ -35,6 +36,7 @@ function normalizeSettings(rawSettings) {
     autoRefreshEnabled: !!raw.autoRefreshEnabled,
     autoRefreshIntervalSec: normalizeInterval(raw.autoRefreshIntervalSec),
     alarmThresholdC: normalizeThreshold(raw.alarmThresholdC),
+    weatherCityName: typeof raw.weatherCityName === "string" ? raw.weatherCityName.trim().slice(0, 32) : "",
   };
 }
 

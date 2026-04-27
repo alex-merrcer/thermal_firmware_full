@@ -11,6 +11,8 @@ The cloud function acts as the backend and queries the latest device property sn
 
 - `miniprogram/pages/index`
   A thermal dashboard page that shows min, max, and center temperature.
+- `miniprogram/pages/weather`
+  A weather page backed by a WeChat cloud function.
 - `cloudfunctions/iotBridge`
   A cloud function that signs and calls Alibaba Cloud IoT OpenAPI.
 
@@ -49,6 +51,23 @@ Notes:
 - If your Alibaba Cloud console gives you a dedicated IoT endpoint, fill it here.
 - If your IoT instance has an `IotInstanceId`, fill it.
 - `MinTemp / MaxTemp / CenterTemp` must match the TSL property identifiers on Alibaba Cloud IoT.
+
+### 3. Weather configuration
+
+Edit `cloudfunctions/iotBridge/config.js`:
+
+```js
+WEATHER_CONFIG: {
+  baseUrl: "https://api.seniverse.com",
+  apiKey: "YOUR_WEATHER_API_KEY",
+  defaultLocation: "Shanghai",
+}
+```
+
+Notes:
+
+- the weather page uses the cloud function, not the ESP32 runtime
+- if `apiKey` is not filled, the weather page will show a clear config error
 
 ## Alibaba Cloud IoT Side
 

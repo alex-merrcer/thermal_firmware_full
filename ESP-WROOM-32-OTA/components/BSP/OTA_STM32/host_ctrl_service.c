@@ -260,7 +260,10 @@ static esp_err_t host_ctrl_ble_set_enabled(uint8_t enabled)
 static void host_ctrl_apply_requested_radios(void)
 {
     uint8_t wifi_target = s_wifi_requested;
+    /* Keep BLE provisioning discoverable while the host stays active so the mini-program
+     * can reconnect and adjust Wi-Fi at any time, even after the device is already online. */
     uint8_t ble_target = (uint8_t)((s_ble_requested != 0U) ||
+                                   (wifi_service_has_credentials() != 0U) ||
                                    (wifi_service_needs_provisioning() != 0U) ||
                                    (ble_provision_service_should_force_ble() != 0U));
 
