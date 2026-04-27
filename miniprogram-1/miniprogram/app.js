@@ -14,7 +14,7 @@ App({
       cloudFunctionName: "iotBridge",
       cloudReady: false,
       appVersion: "v2.0.0",
-      deviceModelText: "STM32 + ESP32 红外热成像测温系统",
+      deviceModelText: "红外热成像测温终端",
       settings,
       lastDashboardData: null,
       lastBridgeError: "",

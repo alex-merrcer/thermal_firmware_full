@@ -2,43 +2,36 @@ const { callIotBridge } = require("../../utils/cloud");
 const {
   formatDateTime,
   formatRelativeUpdate,
+  isUsableNumber,
   normalizeOnlineStatus,
+  resolveFriendlyDeviceName,
 } = require("../../utils/format");
 
-const PENDING_CAPABILITIES = [
-  {
-    key: "wifi",
-    title: "Wi-Fi 状态",
-    description: "当前 firmware / cloud 链路未接入上云展示。",
-  },
-  {
-    key: "ble",
-    title: "蓝牙状态",
-    description: "当前 firmware / cloud 链路未接入上云展示。",
-  },
-  {
-    key: "ota",
-    title: "OTA 更新",
-    description: "当前 firmware / cloud 链路未接入上云展示。",
-  },
-  {
-    key: "firmware",
-    title: "固件版本",
-    description: "当前 firmware / cloud 链路未接入上云展示。",
-  },
-];
+function hasValidTime(value) {
+  return isUsableNumber(value) && value > 0;
+}
 
-function buildDeviceViewModel(rawData, modelText) {
+function buildDeviceViewModel(rawData) {
   const normalizedRaw = rawData || {};
   const online = normalizeOnlineStatus(normalizedRaw.onlineStatus);
+  const hasSnapshot = hasValidTime(normalizedRaw.latestPropertyTimeMs);
 
   return {
-    displayName: normalizedRaw.displayName || normalizedRaw.deviceName || "未命名设备",
+    displayName: resolveFriendlyDeviceName(normalizedRaw),
     online,
-    modelText: modelText || "STM32 + ESP32 红外热成像测温系统",
     latestUpdateText: formatDateTime(normalizedRaw.latestPropertyTimeMs),
     latestUpdateRelativeText: formatRelativeUpdate(normalizedRaw.latestPropertyTimeMs),
     fetchedAtText: formatDateTime(normalizedRaw.fetchedAtMs),
+    snapshotStateText: !hasSnapshot
+      ? "暂无温度快照"
+      : online.isOnline
+      ? "温度数据正在实时更新"
+      : "当前显示最后一次有效温度快照",
+    snapshotDescription: !hasSnapshot
+      ? "设备联网并开始上报后，这里会显示最近一次温度快照。"
+      : online.isOnline
+      ? "设备在线，可通过首页和历史页查看最新温度趋势。"
+      : `设备离线，温度数据停留在 ${formatRelativeUpdate(normalizedRaw.latestPropertyTimeMs)}。`,
   };
 }
 
@@ -47,7 +40,6 @@ Page({
     loading: false,
     errorMessage: "",
     device: buildDeviceViewModel({}),
-    pendingCapabilities: PENDING_CAPABILITIES,
   },
 
   onLoad() {
@@ -83,10 +75,8 @@ Page({
   },
 
   applyDashboardData(rawData) {
-    const app = getApp();
-
     this.setData({
-      device: buildDeviceViewModel(rawData, app.globalData.deviceModelText),
+      device: buildDeviceViewModel(rawData),
     });
   },
 
@@ -95,7 +85,7 @@ Page({
 
     if (!app.globalData.cloudReady) {
       this.setData({
-        errorMessage: "云开发环境尚未配置完成，请先检查 app.js 中的 envId。",
+        errorMessage: "服务暂未准备好，请稍后再试。",
       });
 
       if (options && options.fromPullDown) {

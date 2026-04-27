@@ -4,21 +4,34 @@
       <view class="hero-copy">
         <view class="hero-title">热成像监测</view>
         <view class="hero-device">{{dashboard.displayName}}</view>
-        <view class="hero-subtitle">{{dashboard.modelText}}</view>
+        <view class="hero-subtitle">首页只保留监测信息，方便你快速确认设备状态和温度快照。</view>
       </view>
       <view class="status-pill {{dashboard.online.tone}}">{{dashboard.online.text}}</view>
     </view>
-    <view class="hero-meta">最近上报 {{dashboard.latestUpdateText}}</view>
-    <view class="hero-note">{{dashboard.latestUpdateRelativeText}} · 云端同步 {{dashboard.fetchedAtText}}</view>
+
+    <view class="hero-facts">
+      <view class="hero-fact" wx:for="{{dashboard.heroFacts}}" wx:key="key">
+        <view class="hero-fact-label">{{item.label}}</view>
+        <view class="hero-fact-value">{{item.value}}</view>
+      </view>
+    </view>
+
+    <view class="snapshot-banner {{dashboard.freshnessTone}}">
+      <view class="snapshot-title">{{dashboard.freshnessTitle}}</view>
+      <view class="snapshot-text">{{dashboard.freshnessDescription}}</view>
+    </view>
   </view>
 
   <view class="metrics-grid">
     <view
       wx:for="{{metrics}}"
       wx:key="key"
-      class="metric-card metric-{{item.tone}} {{item.featured ? 'featured' : ''}}"
+      class="metric-card metric-{{item.tone}} {{item.featured ? 'featured' : ''}} {{item.stale ? 'stale' : ''}}"
     >
-      <view class="metric-label">{{item.label}}</view>
+      <view class="metric-head">
+        <view class="metric-label">{{item.label}}</view>
+        <view class="metric-state">{{item.stateText}}</view>
+      </view>
       <view class="metric-value">{{item.valueText}}</view>
       <view class="metric-unit">{{item.unitLabel}}</view>
     </view>
@@ -28,7 +41,7 @@
     <view class="status-header">
       <view>
         <view class="section-title">当前状态</view>
-        <view class="section-subtitle">按最高温和本地报警阈值实时判断</view>
+        <view class="section-subtitle">{{dashboard.statusHintText}}</view>
       </view>
       <view class="status-pill {{dashboard.thermalStatus.tone}}">{{dashboard.thermalStatus.label}}</view>
     </view>
@@ -42,16 +55,12 @@
     <view class="error-text">{{errorMessage}}</view>
   </view>
 
-  <view class="action-grid">
-    <button class="primary-button" bindtap="onRefreshTap" loading="{{loading}}">
-      {{loading ? "正在刷新..." : "立即刷新"}}
-    </button>
-    <button class="secondary-button" bindtap="goHistory">查看历史</button>
-    <button class="secondary-button" bindtap="goSettings">设备设置</button>
-  </view>
+  <button class="primary-button home-refresh-button" bindtap="onRefreshTap" loading="{{loading}}">
+    {{loading ? "正在刷新..." : "立即刷新"}}
+  </button>
 
-  <view class="empty-card" wx:if="{{!errorMessage && dashboard.latestUpdateText === '--'}}">
+  <view class="empty-card" wx:if="{{!errorMessage && !dashboard.hasSnapshot}}">
     <view class="empty-title">等待第一条热成像数据</view>
-    <view class="empty-text">设备上线并上报后，首页会自动显示最高温、中心温和最低温。</view>
+    <view class="empty-text">设备开始上报后，这里会自动显示最高温、中心温、最低温以及状态判断。</view>
   </view>
 </view>

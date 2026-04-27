@@ -1,5 +1,5 @@
 const { callIotBridge } = require("../../utils/cloud");
-const { normalizeOnlineStatus } = require("../../utils/format");
+const { normalizeOnlineStatus, resolveFriendlyDeviceName } = require("../../utils/format");
 const {
   ALLOWED_INTERVALS,
   DEFAULT_SETTINGS,
@@ -9,23 +9,6 @@ const {
 const UNIT_OPTIONS = [
   { label: "摄氏 °C", value: "C" },
   { label: "华氏 °F", value: "F" },
-];
-
-const PLACEHOLDER_ITEMS = [
-  {
-    key: "weather",
-    title: "天气实况",
-    description: "阶段 7 已接入云函数天气查询，可以查看城市天气，不占用 ESP32 本地链路。",
-    actionText: "进入",
-    interactive: true,
-  },
-  {
-    key: "firmwareUpdate",
-    title: "固件更新详情",
-    description: "OTA 状态已经开始上云，后续会补完整的小程序升级页与版本详情。",
-    actionText: "待接入",
-    interactive: false,
-  },
 ];
 
 function formatThresholdInput(value) {
@@ -51,9 +34,7 @@ Page({
       text: "状态未知",
       tone: "pending",
     },
-    placeholderItems: PLACEHOLDER_ITEMS,
     versionText: "v2.0.0",
-    debugHintText: "连续点击版本区域 5 次进入隐藏调试页",
   },
 
   onLoad() {
@@ -101,8 +82,8 @@ Page({
     const onlineStatus = normalizeOnlineStatus(cached.onlineStatus);
 
     this.setData({
-      deviceDisplayName: cached.displayName || cached.deviceName || "未命名设备",
-      nicknameInput: cached.nickname || cached.displayName || "",
+      deviceDisplayName: resolveFriendlyDeviceName(cached),
+      nicknameInput: cached.nickname || "",
       onlineStatus,
     });
   },
@@ -273,19 +254,9 @@ Page({
     });
   },
 
-  onPlaceholderItemTap(event) {
-    const key = event.currentTarget.dataset.key;
-
-    if (key === "weather") {
-      wx.navigateTo({
-        url: "/pages/weather/index",
-      });
-      return;
-    }
-
-    wx.showToast({
-      title: "该能力还在接入中",
-      icon: "none",
+  onWeatherTap() {
+    wx.navigateTo({
+      url: "/pages/weather/index",
     });
   },
 
@@ -309,16 +280,12 @@ Page({
     if (this.versionTapCount >= 5) {
       app.grantDebugPageAccess();
       this.versionTapCount = 0;
-      this.setData({
-        debugHintText: "调试页已解锁，正在进入…",
+      wx.showToast({
+        title: "调试页已解锁",
+        icon: "none",
       });
       this.goDebugPage();
-      return;
     }
-
-    this.setData({
-      debugHintText: `再点击 ${5 - this.versionTapCount} 次进入隐藏调试页`,
-    });
   },
 
   goDebugPage() {

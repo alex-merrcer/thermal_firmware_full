@@ -1,11 +1,10 @@
 .settings-page {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 20rpx;
 }
 
-.setting-row,
-.placeholder-item {
+.setting-row {
   display: flex;
   justify-content: space-between;
   gap: 20rpx;
@@ -14,8 +13,7 @@
   border-top: 1rpx solid rgba(36, 27, 21, 0.08);
 }
 
-.setting-row:first-of-type,
-.placeholder-item:first-of-type {
+.setting-row:first-of-type {
   margin-top: 12rpx;
 }
 
@@ -38,7 +36,7 @@
 
 .setting-value {
   flex-shrink: 0;
-  font-size: 25rpx;
+  font-size: 24rpx;
   color: #5c4434;
 }
 
@@ -47,41 +45,57 @@
 }
 
 .input-label {
-  margin-top: 24rpx;
+  margin-top: 22rpx;
   font-size: 24rpx;
   color: #7c7066;
 }
 
 .setting-input {
-  margin-top: 14rpx;
-  height: 88rpx;
+  margin-top: 12rpx;
+  height: 80rpx;
   border-radius: 22rpx;
   background: rgba(247, 243, 236, 0.92);
   padding: 0 24rpx;
-  font-size: 28rpx;
+  font-size: 26rpx;
   color: #241b15;
 }
 
 .button-row {
-  margin-top: 20rpx;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
+  margin-top: 18rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.button-row .primary-button,
+.button-row .secondary-button {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 58rpx;
+  padding: 0 10rpx;
+  border-radius: 22rpx;
+  font-size: 22rpx;
+  line-height: 1.2;
+}
+
+.single-action {
+  margin-top: 18rpx;
 }
 
 .device-summary {
-  margin-top: 22rpx;
+  margin-top: 20rpx;
   display: flex;
   justify-content: space-between;
   gap: 18rpx;
   align-items: center;
-  padding: 24rpx;
+  padding: 22rpx;
   border-radius: 24rpx;
   background: rgba(248, 243, 236, 0.92);
 }
 
 .device-name {
-  font-size: 34rpx;
+  font-size: 32rpx;
   font-weight: 700;
   color: #241b15;
 }

@@ -17,9 +17,25 @@
 }
 
 .compact-button {
-  min-width: 180rpx;
-  height: 72rpx;
+  min-width: 156rpx;
+  min-height: 64rpx;
   font-size: 24rpx;
+  padding: 0 18rpx;
+}
+
+.scan-meta-row {
+  margin-top: 18rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.scan-meta-item {
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(247, 243, 236, 0.92);
+  font-size: 22rpx;
+  color: #6a5648;
 }
 
 .device-item {
@@ -39,10 +55,34 @@
   flex: 1;
 }
 
+.device-topline {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  flex-wrap: wrap;
+}
+
 .setting-title {
   font-size: 26rpx;
   font-weight: 600;
   color: #241b15;
+}
+
+.device-badge {
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 20rpx;
+  font-weight: 600;
+}
+
+.device-badge.candidate {
+  background: rgba(80, 106, 160, 0.14);
+  color: #506aa0;
+}
+
+.device-badge.plain {
+  background: rgba(124, 115, 105, 0.12);
+  color: #7c7369;
 }
 
 .setting-desc {
@@ -50,6 +90,12 @@
   font-size: 23rpx;
   line-height: 1.7;
   color: #7d6f62;
+}
+
+.device-meta {
+  margin-top: 6rpx;
+  font-size: 21rpx;
+  color: #9b8c80;
 }
 
 .setting-value {
@@ -66,11 +112,11 @@
 
 .setting-input {
   margin-top: 14rpx;
-  height: 88rpx;
+  height: 80rpx;
   border-radius: 22rpx;
   background: rgba(247, 243, 236, 0.92);
   padding: 0 24rpx;
-  font-size: 28rpx;
+  font-size: 26rpx;
   color: #241b15;
 }
 

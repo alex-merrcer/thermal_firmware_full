@@ -1,30 +1,45 @@
 .weather-page {
   display: flex;
   flex-direction: column;
-  gap: 22rpx;
+  gap: 20rpx;
 }
 
 .input-label {
-  margin-top: 24rpx;
+  margin-top: 22rpx;
   font-size: 24rpx;
   color: #7c7066;
 }
 
 .setting-input {
-  margin-top: 14rpx;
-  height: 88rpx;
+  margin-top: 12rpx;
+  height: 80rpx;
   border-radius: 22rpx;
   background: rgba(247, 243, 236, 0.92);
   padding: 0 24rpx;
-  font-size: 28rpx;
+  font-size: 26rpx;
   color: #241b15;
 }
 
 .button-row {
-  margin-top: 20rpx;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
+  margin-top: 18rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.weather-action-button {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 58rpx;
+  padding: 0 10rpx;
+  border-radius: 22rpx;
+  font-size: 22rpx;
+  line-height: 1.2;
+}
+
+.weather-secondary-action {
+  letter-spacing: 0;
 }
 
 .weather-hero {
@@ -34,15 +49,33 @@
   color: #fff8ef;
 }
 
+.weather-location {
+  font-size: 22rpx;
+  color: rgba(255, 241, 224, 0.74);
+}
+
 .weather-city {
-  font-size: 34rpx;
+  margin-top: 10rpx;
+  font-size: 36rpx;
   font-weight: 700;
 }
 
+.weather-row {
+  margin-top: 14rpx;
+  display: flex;
+  justify-content: space-between;
+  gap: 18rpx;
+  align-items: center;
+}
+
 .weather-text {
-  margin-top: 12rpx;
   font-size: 26rpx;
-  color: rgba(255, 241, 224, 0.9);
+  color: rgba(255, 241, 224, 0.92);
+}
+
+.weather-air {
+  font-size: 22rpx;
+  color: rgba(255, 241, 224, 0.78);
 }
 
 .weather-temp {
@@ -52,8 +85,177 @@
   font-weight: 800;
 }
 
+.weather-range {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: rgba(255, 241, 224, 0.82);
+}
+
 .weather-source {
   margin-top: 18rpx;
   font-size: 22rpx;
   color: rgba(255, 241, 224, 0.72);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.summary-card {
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+}
+
+.summary-label {
+  font-size: 23rpx;
+  color: #7d6f62;
+}
+
+.summary-value {
+  margin-top: 14rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #221710;
+}
+
+.forecast-list {
+  margin-top: 16rpx;
+}
+
+.forecast-item {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 20rpx 0;
+  border-top: 1rpx solid rgba(36, 27, 21, 0.08);
+}
+
+.forecast-item:first-of-type {
+  border-top: none;
+  padding-top: 8rpx;
+}
+
+.forecast-main {
+  width: 150rpx;
+  flex-shrink: 0;
+}
+
+.forecast-week {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: #241b15;
+}
+
+.forecast-date {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #8b7d70;
+}
+
+.forecast-copy {
+  flex: 1;
+}
+
+.forecast-weather {
+  font-size: 24rpx;
+  color: #241b15;
+}
+
+.forecast-extra {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #7d6f62;
+}
+
+.forecast-temp {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #8a3f23;
+}
+
+.hourly-scroll {
+  width: 100%;
+  margin-top: 16rpx;
+}
+
+.hourly-list {
+  display: inline-flex;
+  gap: 14rpx;
+  padding-bottom: 4rpx;
+}
+
+.hourly-item {
+  width: 150rpx;
+  padding: 18rpx;
+  box-sizing: border-box;
+  border-radius: 22rpx;
+  background: rgba(247, 243, 236, 0.92);
+}
+
+.hourly-time {
+  font-size: 22rpx;
+  color: #7b6b5e;
+}
+
+.hourly-weather {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  color: #241b15;
+}
+
+.hourly-temp {
+  margin-top: 10rpx;
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #8a3f23;
+}
+
+.hourly-rain {
+  margin-top: 10rpx;
+  font-size: 21rpx;
+  color: #7d6f62;
+}
+
+.life-list {
+  margin-top: 16rpx;
+}
+
+.life-item {
+  padding: 20rpx 0;
+  border-top: 1rpx solid rgba(36, 27, 21, 0.08);
+}
+
+.life-item:first-of-type {
+  border-top: none;
+  padding-top: 8rpx;
+}
+
+.life-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.life-title {
+  font-size: 25rpx;
+  font-weight: 700;
+  color: #241b15;
+}
+
+.life-brief {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  color: #8a3f23;
+}
+
+.life-advice {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  line-height: 1.7;
+  color: #7d6f62;
 }

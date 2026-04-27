@@ -7,7 +7,7 @@
       <view class="setting-row">
         <view class="setting-copy">
           <view class="setting-title">温度单位</view>
-          <view class="setting-desc">首页和历史页都会按当前单位显示。</view>
+          <view class="setting-desc">首页和历史页会按当前单位显示温度。</view>
         </view>
         <view class="setting-value">{{currentUnitLabel}}</view>
       </view>
@@ -16,7 +16,7 @@
     <view class="setting-row">
       <view class="setting-copy">
         <view class="setting-title">自动刷新</view>
-        <view class="setting-desc">返回首页后按设定频率自动拉取最新快照。</view>
+        <view class="setting-desc">回到首页后，会按设定频率自动拉取最新快照。</view>
       </view>
       <switch checked="{{autoRefreshEnabled}}" color="#A24B2A" bindchange="onAutoRefreshChange" />
     </view>
@@ -24,7 +24,7 @@
     <picker range="{{intervalOptions}}" value="{{intervalIndex}}" bindchange="onIntervalChange">
       <view class="setting-row">
         <view class="setting-copy">
-          <view class="setting-title">自动刷新间隔</view>
+          <view class="setting-title">刷新间隔</view>
           <view class="setting-desc">当前支持 5 / 10 / 15 / 30 / 60 秒。</view>
         </view>
         <view class="setting-value">{{currentIntervalLabel}}</view>
@@ -33,13 +33,13 @@
   </view>
 
   <view class="panel">
-    <view class="section-title">设备接入</view>
-    <view class="section-subtitle">当设备还没有保存 Wi‑Fi 时，可以直接通过 BLE 给 ESP32 配网。</view>
+    <view class="section-title">网络连接</view>
+    <view class="section-subtitle">更换路由器或密码后，可以在这里重新联网。</view>
 
     <view class="setting-row ble-entry" bindtap="onBleProvisionTap">
       <view class="setting-copy">
-        <view class="setting-title">BLE 配网</view>
-        <view class="setting-desc">扫描附近设备，写入 Wi‑Fi，并实时查看 ESP32 回传的联网状态。</view>
+        <view class="setting-title">重新联网</view>
+        <view class="setting-desc">搜索附近设备，重新输入 Wi‑Fi 信息，并查看连接进度。</view>
       </view>
       <view class="setting-value">进入</view>
     </view>
@@ -65,8 +65,8 @@
   </view>
 
   <view class="panel">
-    <view class="section-title">设备备注名</view>
-    <view class="section-subtitle">通过阿里云设备备注名接口真实更新，首页和设备页会同步显示。</view>
+    <view class="section-title">设备名称</view>
+    <view class="section-subtitle">你可以给设备起一个更容易识别的名字，首页和设备页会同步显示。</view>
 
     <view class="device-summary">
       <view>
@@ -76,43 +76,37 @@
       <view class="status-pill {{onlineStatus.tone}}">{{onlineStatus.text}}</view>
     </view>
 
-    <view class="input-label">设备备注名</view>
+    <view class="input-label">设备名称</view>
     <input
       class="setting-input"
       value="{{nicknameInput}}"
       bindinput="onNicknameInput"
       maxlength="32"
-      placeholder="请输入 4-32 个字符"
+      placeholder="例如：车间 1 号设备"
     />
 
-    <button class="primary-button" bindtap="onSaveNicknameTap" loading="{{savingNickname}}">
+    <button class="primary-button single-action" bindtap="onSaveNicknameTap" loading="{{savingNickname}}">
       {{savingNickname ? "正在保存..." : "保存设备名称"}}
     </button>
   </view>
 
   <view class="panel">
-    <view class="section-title">后续接入</view>
-    <view class="section-subtitle">这部分能力已纳入优化计划，会分阶段接到正式页面里。</view>
+    <view class="section-title">实用工具</view>
+    <view class="section-subtitle">查看当前城市天气，方便巡检和现场判断。</view>
 
-    <view
-      class="placeholder-item"
-      wx:for="{{placeholderItems}}"
-      wx:key="key"
-      data-key="{{item.key}}"
-      bindtap="onPlaceholderItemTap"
-    >
+    <view class="setting-row ble-entry" bindtap="onWeatherTap">
       <view class="setting-copy">
-        <view class="setting-title">{{item.title}}</view>
-        <view class="setting-desc">{{item.description}}</view>
+        <view class="setting-title">天气实况</view>
+        <view class="setting-desc">查看当前城市天气，用于现场巡检或环境参考。</view>
       </view>
-      <view class="status-pill {{item.interactive ? 'pending' : 'disabled'}}">{{item.actionText}}</view>
+      <view class="setting-value">进入</view>
     </view>
   </view>
 
   <view class="panel version-card" bindtap="onVersionTap">
-    <view class="section-title">版本与调试</view>
+    <view class="section-title">关于</view>
     <view class="section-subtitle">当前版本 {{versionText}}</view>
-    <view class="version-hint">{{debugHintText}}</view>
+    <view class="version-hint">如需排查问题，可联系开发者或售后支持。</view>
   </view>
 
   <view class="error-card" wx:if="{{errorMessage}}">

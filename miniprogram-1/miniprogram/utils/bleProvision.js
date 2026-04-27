@@ -20,20 +20,62 @@ function uppercaseUuid(uuid) {
   return (uuid || "").toUpperCase();
 }
 
+function normalizeName(device) {
+  const rawName = device.localName || device.name || "";
+  const trimmed = typeof rawName === "string" ? rawName.trim() : "";
+
+  return trimmed || "未命名设备";
+}
+
+function buildMatchText(matchesName, matchesService) {
+  if (matchesName && matchesService) {
+    return "更像是你的设备，建议优先尝试连接";
+  }
+  if (matchesService) {
+    return "已识别到可联网服务";
+  }
+  if (matchesName) {
+    return "名称与目标设备相近";
+  }
+  return "也可以尝试连接，若不匹配会自动提示";
+}
+
+function buildSignalText(rssi) {
+  if (typeof rssi !== "number" || !Number.isFinite(rssi)) {
+    return "信号未知";
+  }
+
+  if (rssi >= -65) {
+    return "信号良好";
+  }
+
+  if (rssi >= -80) {
+    return "信号一般";
+  }
+
+  return "信号较弱";
+}
+
 function normalizeDevice(device) {
-  const name = device.localName || device.name || "未命名设备";
+  const name = normalizeName(device);
   const advertisServiceUUIDs = (device.advertisServiceUUIDs || []).map(uppercaseUuid);
-  const matches =
-    uppercaseUuid(name).includes(DEVICE_NAME_KEYWORD) ||
-    advertisServiceUUIDs.includes(SERVICE_UUID);
+  const matchesName = uppercaseUuid(name).includes(DEVICE_NAME_KEYWORD);
+  const matchesService = advertisServiceUUIDs.includes(SERVICE_UUID);
+  const matches = matchesName || matchesService;
+  const rssi = typeof device.RSSI === "number" ? device.RSSI : -999;
 
   return {
     deviceId: device.deviceId,
     name,
     localName: device.localName || "",
-    rssi: typeof device.RSSI === "number" ? device.RSSI : -999,
+    rssi,
     advertisServiceUUIDs,
     matches,
+    matchesName,
+    matchesService,
+    matchText: buildMatchText(matchesName, matchesService),
+    badgeText: matches ? "推荐连接" : "可尝试连接",
+    signalText: buildSignalText(rssi),
   };
 }
 
@@ -105,6 +147,15 @@ async function closeAdapter() {
   await promisifyWxCall(wx.closeBluetoothAdapter).catch(() => {});
 }
 
+async function emitExistingDevices(onFound) {
+  const result = await promisifyWxCall(wx.getBluetoothDevices).catch(() => null);
+  const devices = result && Array.isArray(result.devices) ? result.devices.map(normalizeDevice) : [];
+
+  if (devices.length && typeof onFound === "function") {
+    onFound(devices);
+  }
+}
+
 async function startDiscovery(onFound) {
   await openAdapter();
 
@@ -115,7 +166,7 @@ async function startDiscovery(onFound) {
   currentDiscoveryListener = (payload) => {
     const devices = (payload.devices || [])
       .map(normalizeDevice)
-      .filter((item) => item.matches);
+      .filter((item) => !!item.deviceId);
 
     if (devices.length && typeof onFound === "function") {
       onFound(devices);
@@ -125,8 +176,9 @@ async function startDiscovery(onFound) {
   wx.onBluetoothDeviceFound(currentDiscoveryListener);
   await promisifyWxCall(wx.startBluetoothDevicesDiscovery, {
     allowDuplicatesKey: false,
-    services: [SERVICE_UUID],
+    interval: 0,
   });
+  await emitExistingDevices(onFound);
 }
 
 async function stopDiscovery() {
@@ -138,47 +190,65 @@ async function stopDiscovery() {
 }
 
 async function connectDevice(deviceId) {
-  const servicesResult = await promisifyWxCall(wx.createBLEConnection, {
+  let servicesResult = null;
+  let service = null;
+  let characteristicsResult = null;
+  let txCharacteristic = null;
+  let rxCharacteristic = null;
+  let availableServices = [];
+
+  await promisifyWxCall(wx.createBLEConnection, {
     deviceId,
     timeout: 10000,
-  }).then(() => promisifyWxCall(wx.getBLEDeviceServices, { deviceId }));
-  const service = (servicesResult.services || []).find(
-    (item) => uppercaseUuid(item.uuid) === SERVICE_UUID
-  );
-
-  if (!service) {
-    throw new Error("设备未暴露配网服务");
-  }
-
-  const characteristicsResult = await promisifyWxCall(wx.getBLEDeviceCharacteristics, {
-    deviceId,
-    serviceId: service.uuid,
-  });
-  const characteristics = characteristicsResult.characteristics || [];
-  const txCharacteristic = characteristics.find(
-    (item) => uppercaseUuid(item.uuid) === TX_CHARACTERISTIC_UUID
-  );
-  const rxCharacteristic = characteristics.find(
-    (item) => uppercaseUuid(item.uuid) === RX_CHARACTERISTIC_UUID
-  );
-
-  if (!txCharacteristic || !rxCharacteristic) {
-    throw new Error("设备配网特征缺失");
-  }
-
-  await promisifyWxCall(wx.notifyBLECharacteristicValueChange, {
-    deviceId,
-    serviceId: service.uuid,
-    characteristicId: txCharacteristic.uuid,
-    state: true,
   });
 
-  return {
-    deviceId,
-    serviceId: service.uuid,
-    txCharacteristicId: txCharacteristic.uuid,
-    rxCharacteristicId: rxCharacteristic.uuid,
-  };
+  try {
+    servicesResult = await promisifyWxCall(wx.getBLEDeviceServices, { deviceId });
+    availableServices = (servicesResult.services || []).map((item) => uppercaseUuid(item.uuid));
+    service = (servicesResult.services || []).find(
+      (item) => uppercaseUuid(item.uuid) === SERVICE_UUID
+    );
+
+    if (!service) {
+      throw new Error(
+        availableServices.length
+          ? "该设备已连接，但暂不支持当前联网方式，请换一个设备重试。"
+          : "该设备已连接，但暂时无法继续联网配置。"
+      );
+    }
+
+    characteristicsResult = await promisifyWxCall(wx.getBLEDeviceCharacteristics, {
+      deviceId,
+      serviceId: service.uuid,
+    });
+    txCharacteristic = (characteristicsResult.characteristics || []).find(
+      (item) => uppercaseUuid(item.uuid) === TX_CHARACTERISTIC_UUID
+    );
+    rxCharacteristic = (characteristicsResult.characteristics || []).find(
+      (item) => uppercaseUuid(item.uuid) === RX_CHARACTERISTIC_UUID
+    );
+
+    if (!txCharacteristic || !rxCharacteristic) {
+      throw new Error("该设备暂不支持当前联网方式，请换一个设备重试。");
+    }
+
+    await promisifyWxCall(wx.notifyBLECharacteristicValueChange, {
+      deviceId,
+      serviceId: service.uuid,
+      characteristicId: txCharacteristic.uuid,
+      state: true,
+    });
+
+    return {
+      deviceId,
+      serviceId: service.uuid,
+      txCharacteristicId: txCharacteristic.uuid,
+      rxCharacteristicId: rxCharacteristic.uuid,
+    };
+  } catch (error) {
+    await disconnectDevice(deviceId);
+    throw error;
+  }
 }
 
 async function disconnectDevice(deviceId) {

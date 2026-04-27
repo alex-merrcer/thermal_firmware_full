@@ -4,7 +4,7 @@ function buildFriendlyErrorMessage(error) {
   }
 
   if (error.errorCode === "CONFIG_MISSING") {
-    return `云函数配置不完整，请补充：${(error.missingFields || []).join("、")}`;
+    return "服务配置尚未完成，请稍后再试。";
   }
 
   if (error.errorCode === "INVALID_NICKNAME") {
@@ -13,10 +13,10 @@ function buildFriendlyErrorMessage(error) {
 
   if (typeof error.errMsg === "string") {
     if (error.errMsg.indexOf("FunctionName parameter could not be found") >= 0) {
-      return "云函数 iotBridge 尚未部署，请先上传并部署。";
+      return "服务暂未准备好，请稍后再试。";
     }
     if (error.errMsg.indexOf("Environment not found") >= 0) {
-      return "当前云开发环境不存在，请检查 app.js 中的 envId 配置。";
+      return "当前服务暂不可用，请稍后再试。";
     }
 
     return error.errMsg;
@@ -33,7 +33,7 @@ function callIotBridge(action, data) {
   const app = getApp();
 
   if (!app.globalData.cloudReady) {
-    return Promise.reject(new Error("云开发环境尚未配置完成，请先检查 app.js 中的 envId。"));
+    return Promise.reject(new Error("服务暂未准备好，请稍后再试。"));
   }
 
   return wx.cloud

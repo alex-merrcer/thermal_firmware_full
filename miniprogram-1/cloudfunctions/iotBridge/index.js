@@ -19,6 +19,7 @@ const WEATHER_PLACEHOLDER_VALUES = [
   "YOUR_WEATHER_API_KEY",
   "your_weather_api_key",
 ];
+const WEATHER_LIFE_INDEX_KEYS = ["comfort", "umbrella", "travel"];
 const HISTORY_RANGE_MAP = {
   "1h": {
     durationMs: 60 * 60 * 1000,
@@ -86,9 +87,6 @@ function validateWeatherConfig() {
 
   if (!WEATHER_CONFIG || !WEATHER_CONFIG.baseUrl) {
     missing.push("weather.baseUrl");
-  }
-  if (!WEATHER_CONFIG || !WEATHER_CONFIG.apiKey || isWeatherPlaceholder(WEATHER_CONFIG.apiKey)) {
-    missing.push("weather.apiKey");
   }
 
   return missing;
@@ -177,7 +175,10 @@ function getRpcEndpoint() {
   return normalizeRpcEndpoint(ALIYUN_IOT_CONFIG.endpoint);
 }
 
-function requestJson(urlString) {
+function requestJson(urlString, options) {
+  const requestOptions = options || {};
+  const headers = requestOptions.headers || {};
+
   return new Promise((resolve, reject) => {
     const url = new URL(urlString);
     const req = https.request(
@@ -186,7 +187,8 @@ function requestJson(urlString) {
         hostname: url.hostname,
         path: `${url.pathname}${url.search}`,
         method: "GET",
-        timeout: ALIYUN_IOT_CONFIG.requestTimeoutMs || 8000,
+        timeout: requestOptions.timeoutMs || ALIYUN_IOT_CONFIG.requestTimeoutMs || 8000,
+        headers,
       },
       (res) => {
         let raw = "";
@@ -224,7 +226,7 @@ function normalizeWeatherEndpoint(endpoint) {
   let normalized = typeof endpoint === "string" ? endpoint.trim() : "";
 
   if (!normalized) {
-    normalized = "https://api.seniverse.com";
+    normalized = "https://uapis.cn/api/v1/misc/weather";
   } else if (!/^https?:\/\//i.test(normalized)) {
     normalized = `https://${normalized}`;
   }
@@ -232,42 +234,152 @@ function normalizeWeatherEndpoint(endpoint) {
   return normalized.replace(/\/+$/, "");
 }
 
+function buildWeatherEndpointUrl() {
+  const url = new URL(normalizeWeatherEndpoint(WEATHER_CONFIG.baseUrl));
+  return url;
+}
+
 function getWeatherDefaultLocation() {
   return (WEATHER_CONFIG && typeof WEATHER_CONFIG.defaultLocation === "string" && WEATHER_CONFIG.defaultLocation.trim()) ?
     WEATHER_CONFIG.defaultLocation.trim() :
-    "Shanghai";
+    "佛山";
 }
 
-function buildWeatherNowUrl(location) {
-  const url = new URL(`${normalizeWeatherEndpoint(WEATHER_CONFIG.baseUrl)}/v3/weather/now.json`);
+function getWeatherDefaultAdcode() {
+  return (WEATHER_CONFIG && typeof WEATHER_CONFIG.defaultAdcode === "string" && WEATHER_CONFIG.defaultAdcode.trim()) ?
+    WEATHER_CONFIG.defaultAdcode.trim() :
+    "";
+}
 
-  url.searchParams.set("key", WEATHER_CONFIG.apiKey);
-  url.searchParams.set("location", location);
-  url.searchParams.set("language", "zh-Hans");
-  url.searchParams.set("unit", "c");
+function buildWeatherNowUrl(options) {
+  const url = buildWeatherEndpointUrl();
+  const requestOptions = options || {};
+  const cityName = typeof requestOptions.cityName === "string" ? requestOptions.cityName.trim() : "";
+  const adcode = typeof requestOptions.adcode === "string" ? requestOptions.adcode.trim() : "";
+
+  if (cityName) {
+    url.searchParams.set("city", cityName);
+  } else if (adcode) {
+    url.searchParams.set("adcode", adcode);
+  } else {
+    url.searchParams.set("city", getWeatherDefaultLocation());
+  }
+
+  if (adcode) {
+    url.searchParams.set("adcode", adcode);
+  }
+
+  url.searchParams.set("lang", WEATHER_CONFIG.lang || "zh");
+  url.searchParams.set("extended", WEATHER_CONFIG.enableExtended === false ? "false" : "true");
+  url.searchParams.set("forecast", WEATHER_CONFIG.enableForecast === false ? "false" : "true");
+  url.searchParams.set("hourly", WEATHER_CONFIG.enableHourly === false ? "false" : "true");
+  url.searchParams.set("indices", WEATHER_CONFIG.enableIndices === false ? "false" : "true");
+
+  if (WEATHER_CONFIG.apiKey && !isWeatherPlaceholder(WEATHER_CONFIG.apiKey)) {
+    url.searchParams.set("apikey", WEATHER_CONFIG.apiKey);
+  }
+
   return url.toString();
 }
 
-function parseWeatherNowResponse(response, requestedLocation) {
-  const results = response && Array.isArray(response.results) ? response.results : [];
-  const first = results[0] || {};
-  const location = first.location || {};
-  const now = first.now || {};
+function pickLifeIndices(rawLifeIndices) {
+  return WEATHER_LIFE_INDEX_KEYS.map((key) => {
+    const source = rawLifeIndices && rawLifeIndices[key] ? rawLifeIndices[key] : {};
 
-  if (!first || !location.name || !now.text) {
+    switch (key) {
+      case "comfort":
+        return {
+          key,
+          title: "舒适度",
+          level: source.level || "--",
+          brief: source.brief || "--",
+          advice: source.advice || "",
+        };
+
+      case "umbrella":
+        return {
+          key,
+          title: "雨具建议",
+          level: source.level || "--",
+          brief: source.brief || "--",
+          advice: source.advice || "",
+        };
+
+      case "travel":
+        return {
+          key,
+          title: "出行建议",
+          level: source.level || "--",
+          brief: source.brief || "--",
+          advice: source.advice || "",
+        };
+
+      default:
+        return {
+          key,
+          title: key,
+          level: source.level || "--",
+          brief: source.brief || "--",
+          advice: source.advice || "",
+        };
+    }
+  }).filter((item) => item.level !== "--" || item.brief !== "--" || item.advice);
+}
+
+function parseWeatherNowResponse(response, requestedLocation) {
+  if (!response || !response.city || !response.weather) {
     throw new Error("Weather API response is missing required fields");
   }
 
   return {
     requestedLocation,
-    cityName: location.name,
-    text: now.text,
-    temperatureC: Number(now.temperature),
-    feelsLikeC: Number.isFinite(Number(now.feels_like)) ? Number(now.feels_like) : null,
-    humidity: Number.isFinite(Number(now.humidity)) ? Number(now.humidity) : null,
-    windScale: now.wind_scale || "",
-    updateTime: first.last_update || "",
-    sourceText: "微信云函数",
+    provinceName: response.province || "",
+    cityName: response.city || requestedLocation || "",
+    districtName: response.district || "",
+    adcode: response.adcode || "",
+    text: response.weather || "",
+    iconCode: response.weather_icon || "",
+    temperatureC: Number.isFinite(Number(response.temperature)) ? Number(response.temperature) : null,
+    tempHighC: Number.isFinite(Number(response.temp_max)) ? Number(response.temp_max) : null,
+    tempLowC: Number.isFinite(Number(response.temp_min)) ? Number(response.temp_min) : null,
+    feelsLikeC: Number.isFinite(Number(response.feels_like)) ? Number(response.feels_like) : null,
+    humidity: Number.isFinite(Number(response.humidity)) ? Number(response.humidity) : null,
+    windDirection: response.wind_direction || "",
+    windPower: response.wind_power || "",
+    visibilityKm: Number.isFinite(Number(response.visibility)) ? Number(response.visibility) : null,
+    pressureHpa: Number.isFinite(Number(response.pressure)) ? Number(response.pressure) : null,
+    uvIndex: Number.isFinite(Number(response.uv)) ? Number(response.uv) : null,
+    aqi: Number.isFinite(Number(response.aqi)) ? Number(response.aqi) : null,
+    aqiLevel: Number.isFinite(Number(response.aqi_level)) ? Number(response.aqi_level) : null,
+    aqiCategory: response.aqi_category || "",
+    aqiPrimary: response.aqi_primary || "",
+    precipitationMm: Number.isFinite(Number(response.precipitation)) ? Number(response.precipitation) : null,
+    cloudPercent: Number.isFinite(Number(response.cloud)) ? Number(response.cloud) : null,
+    reportTimeText: response.report_time || "",
+    forecast: Array.isArray(response.forecast)
+      ? response.forecast.slice(0, 3).map((item) => ({
+          date: item.date || "",
+          week: item.week || "",
+          tempMaxC: Number.isFinite(Number(item.temp_max)) ? Number(item.temp_max) : null,
+          tempMinC: Number.isFinite(Number(item.temp_min)) ? Number(item.temp_min) : null,
+          weatherDay: item.weather_day || "",
+          weatherNight: item.weather_night || "",
+          pop: Number.isFinite(Number(item.pop)) ? Number(item.pop) : null,
+          sunrise: item.sunrise || "",
+          sunset: item.sunset || "",
+        }))
+      : [],
+    lifeIndices: pickLifeIndices(response.life_indices),
+    hourlyForecast: Array.isArray(response.hourly_forecast)
+      ? response.hourly_forecast.slice(0, 6).map((item) => ({
+          time: item.time || "",
+          temperatureC: Number.isFinite(Number(item.temperature)) ? Number(item.temperature) : null,
+          weather: item.weather || "",
+          humidity: Number.isFinite(Number(item.humidity)) ? Number(item.humidity) : null,
+          pop: Number.isFinite(Number(item.pop)) ? Number(item.pop) : null,
+        }))
+      : [],
+    sourceText: "UAPI 天气",
     fetchedAtMs: Date.now(),
   };
 }
@@ -696,10 +808,25 @@ async function getDebugData() {
 
 async function getWeatherNow(event) {
   const requestedLocation =
-    typeof (event && event.cityName) === "string" && event.cityName.trim() ?
-      event.cityName.trim() :
-      getWeatherDefaultLocation();
-  const response = await requestJson(buildWeatherNowUrl(requestedLocation));
+    typeof (event && event.cityName) === "string" && event.cityName.trim()
+      ? event.cityName.trim()
+      : getWeatherDefaultLocation();
+  const requestedAdcode =
+    typeof (event && event.adcode) === "string" && event.adcode.trim()
+      ? event.adcode.trim()
+      : getWeatherDefaultAdcode();
+  const response = await requestJson(
+    buildWeatherNowUrl({
+      cityName: requestedLocation,
+      adcode: requestedAdcode,
+    }),
+    {
+      timeoutMs: WEATHER_CONFIG.requestTimeoutMs || 8000,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    }
+  );
 
   return {
     success: true,

@@ -135,6 +135,35 @@ function normalizeOnlineStatus(status) {
   }
 }
 
+function isTechnicalDeviceName(name) {
+  if (typeof name !== "string") {
+    return false;
+  }
+
+  return /(ESP|STM|WROOM|REDPIC|IOT|ALIYUN|TEST|DEV)/i.test(name.trim());
+}
+
+function resolveFriendlyDeviceName(rawData) {
+  const source = rawData || {};
+  const nickname = typeof source.nickname === "string" ? source.nickname.trim() : "";
+  const displayName = typeof source.displayName === "string" ? source.displayName.trim() : "";
+  const deviceName = typeof source.deviceName === "string" ? source.deviceName.trim() : "";
+
+  if (nickname) {
+    return nickname;
+  }
+
+  if (displayName && !isTechnicalDeviceName(displayName)) {
+    return displayName;
+  }
+
+  if (deviceName && !isTechnicalDeviceName(deviceName)) {
+    return deviceName;
+  }
+
+  return "我的热成像设备";
+}
+
 function buildThermalStatus(maxTempC, isOnline, alarmThresholdC) {
   const warningThresholdC = Number((alarmThresholdC - 5).toFixed(1));
 
@@ -142,7 +171,7 @@ function buildThermalStatus(maxTempC, isOnline, alarmThresholdC) {
     return {
       code: "offline",
       label: "设备离线",
-      description: "设备当前未在线，请检查网络连接、电源或阿里云设备状态。",
+      description: "设备当前不在线，请检查电源和网络连接状态。",
       tone: "offline",
     };
   }
@@ -151,7 +180,7 @@ function buildThermalStatus(maxTempC, isOnline, alarmThresholdC) {
     return {
       code: "pending",
       label: "等待数据",
-      description: "已连接云端，正在等待新的热成像温度快照。",
+      description: "设备已连接，正在等待新的热成像温度快照。",
       tone: "pending",
     };
   }
@@ -169,7 +198,7 @@ function buildThermalStatus(maxTempC, isOnline, alarmThresholdC) {
     return {
       code: "warning",
       label: "温度偏高",
-      description: `最高温接近报警阈值，建议重点关注高温区域变化。`,
+      description: "最高温已接近报警阈值，建议重点关注高温区域变化。",
       tone: "warning",
     };
   }
@@ -177,7 +206,7 @@ function buildThermalStatus(maxTempC, isOnline, alarmThresholdC) {
   return {
     code: "normal",
     label: "正常",
-    description: "当前温度处于设定阈值范围内，设备状态稳定。",
+    description: "当前温度处于设定阈值范围内，设备运行状态稳定。",
     tone: "normal",
   };
 }
@@ -228,5 +257,6 @@ module.exports = {
   getTemperatureUnitLabel,
   isUsableNumber,
   normalizeOnlineStatus,
+  resolveFriendlyDeviceName,
   safeJSONStringify,
 };

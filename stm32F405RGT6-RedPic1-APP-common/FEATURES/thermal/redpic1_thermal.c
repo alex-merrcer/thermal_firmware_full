@@ -795,8 +795,7 @@ void redpic1_thermal_handle_key(uint8_t key_value)
         if (s_display_paused != 0U)
         {
             redpic1_thermal_cancel_pending_present_and_clear_submit();
-            if (was_display_paused == 0U &&
-                redpic1_thermal_cloud_pause_send_esp_enabled() != 0U)
+            if (was_display_paused == 0U && redpic1_thermal_cloud_pause_send_esp_enabled() != 0U)
             {
                 (void)redpic1_thermal_cloud_submit_snapshot_to_esp();
             }

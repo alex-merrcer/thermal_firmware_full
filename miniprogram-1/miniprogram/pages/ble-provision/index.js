@@ -9,6 +9,10 @@ function buildLogLine(text) {
   return `${hh}:${mm}:${ss} ${text}`;
 }
 
+function buildDefaultHelperText() {
+  return "搜索附近设备后，选择你的设备并重新输入 Wi‑Fi 信息。推荐设备会优先显示。";
+}
+
 Page({
   data: {
     adapterReady: false,
@@ -22,13 +26,18 @@ Page({
     wifiSsid: "",
     wifiPassword: "",
     statusText: "未连接",
-    helperText: "扫描附近的 RedPic1 Setup 设备，写入 Wi-Fi 后观察连接结果。",
+    helperText: buildDefaultHelperText(),
     errorMessage: "",
     logs: [],
+    nearbyCount: 0,
+    candidateCount: 0,
+    scanElapsedSec: 0,
   },
 
   onLoad() {
     this.deviceMap = {};
+    this.scanHintTimer = null;
+    this.scanStartedAt = 0;
 
     this.valueChangeHandler = (result) => {
       if (!result || result.deviceId !== this.data.activeDeviceId) {
@@ -50,6 +59,7 @@ Page({
         activeDeviceId: "",
         activeDeviceName: "",
         statusText: "连接已断开",
+        helperText: "设备已经断开连接。你可以重新搜索，或直接再次点击列表里的设备。",
       });
     };
 
@@ -62,6 +72,7 @@ Page({
   },
 
   async cleanupBle() {
+    this.stopScanHintTimer();
     if (typeof wx.offBLECharacteristicValueChange === "function" && this.valueChangeHandler) {
       wx.offBLECharacteristicValueChange(this.valueChangeHandler);
     }
@@ -82,19 +93,59 @@ Page({
     this.setData({ logs });
   },
 
+  stopScanHintTimer() {
+    if (this.scanHintTimer) {
+      clearInterval(this.scanHintTimer);
+      this.scanHintTimer = null;
+    }
+  },
+
+  updateScanHint() {
+    const nearbyCount = Object.keys(this.deviceMap).length;
+    const candidateCount = Object.values(this.deviceMap).filter((item) => item.matches).length;
+    const elapsedSec = this.scanStartedAt ? Math.max(1, Math.floor((Date.now() - this.scanStartedAt) / 1000)) : 0;
+    let helperText = buildDefaultHelperText();
+
+    if (this.data.scanning) {
+      if (nearbyCount === 0) {
+        helperText = `正在搜索（${elapsedSec}s），暂未发现附近设备。请确认手机蓝牙、定位权限以及设备已通电。`;
+      } else if (candidateCount === 0) {
+        helperText = `正在搜索（${elapsedSec}s），已发现 ${nearbyCount} 台附近设备。你也可以手动点击列表尝试连接。`;
+      } else {
+        helperText = `正在搜索（${elapsedSec}s），已发现 ${nearbyCount} 台附近设备，其中 ${candidateCount} 台更像是你的设备。`;
+      }
+    } else if (!this.data.connected && nearbyCount > 0) {
+      helperText = `搜索已停止，当前列表里有 ${nearbyCount} 台附近设备，其中 ${candidateCount} 台为推荐设备。`;
+    }
+
+    this.setData({
+      nearbyCount,
+      candidateCount,
+      scanElapsedSec: elapsedSec,
+      helperText,
+    });
+  },
+
   mergeDevices(devices) {
     devices.forEach((item) => {
-      this.deviceMap[item.deviceId] = item;
+      this.deviceMap[item.deviceId] = {
+        ...(this.deviceMap[item.deviceId] || {}),
+        ...item,
+      };
     });
 
     const deviceList = Object.values(this.deviceMap).sort((left, right) => {
-      if (left.name === right.name) {
-        return right.rssi - left.rssi;
+      if (left.matches !== right.matches) {
+        return left.matches ? -1 : 1;
       }
-      return left.name.localeCompare(right.name);
+      if ((left.name || "") !== (right.name || "")) {
+        return (left.name || "").localeCompare(right.name || "");
+      }
+      return right.rssi - left.rssi;
     });
 
     this.setData({ deviceList });
+    this.updateScanHint();
   },
 
   async ensureAdapterReady() {
@@ -108,30 +159,46 @@ Page({
   async onStartScanTap() {
     try {
       await this.ensureAdapterReady();
+      this.stopScanHintTimer();
       this.deviceMap = {};
+      this.scanStartedAt = Date.now();
       this.setData({
         scanning: true,
         deviceList: [],
-        helperText: "正在扫描支持 BLE 配网的设备…",
+        nearbyCount: 0,
+        candidateCount: 0,
+        scanElapsedSec: 0,
+        statusText: "正在扫描",
+        errorMessage: "",
       });
+      this.updateScanHint();
+      this.scanHintTimer = setInterval(() => {
+        this.updateScanHint();
+      }, 1000);
+
       await bleProvision.startDiscovery((devices) => {
         this.mergeDevices(devices);
       });
-      this.appendLog("开始扫描 BLE 配网设备");
+      this.appendLog("开始搜索附近设备");
     } catch (error) {
+      this.stopScanHintTimer();
       this.setData({
         scanning: false,
-        errorMessage: error.message || "蓝牙不可用，请检查系统蓝牙权限",
+        statusText: "搜索失败",
+        errorMessage: error.message || "蓝牙不可用，请检查系统蓝牙、定位权限和微信授权。",
+        helperText: "如果手机蓝牙权限未打开，小程序通常会一直显示搜索中，但找不到任何设备。",
       });
     }
   },
 
   async onStopScanTap() {
+    this.stopScanHintTimer();
     await bleProvision.stopDiscovery();
     this.setData({
       scanning: false,
-      helperText: "扫描已停止，可以选择已发现的设备进行连接。",
+      statusText: this.data.connected ? this.data.statusText : "搜索已停止",
     });
+    this.updateScanHint();
   },
 
   async onDeviceTap(event) {
@@ -146,9 +213,10 @@ Page({
       this.setData({
         connecting: true,
         errorMessage: "",
-        helperText: `正在连接 ${device.name}…`,
+        helperText: `正在连接 ${device.name}，如果它不是可联网设备，稍后会给出明确提示。`,
       });
       await bleProvision.stopDiscovery();
+      this.stopScanHintTimer();
       this.connection = await bleProvision.connectDevice(deviceId);
       this.setData({
         scanning: false,
@@ -156,18 +224,22 @@ Page({
         activeDeviceId: deviceId,
         activeDeviceName: device.name,
         statusText: "已连接，等待设备状态",
-        helperText: "连接成功，设备会通过通知特征返回当前配网状态。",
+        helperText: "连接成功。设备会实时回传联网状态。",
       });
       this.appendLog(`已连接 ${device.name}`);
     } catch (error) {
       this.setData({
+        scanning: false,
+        statusText: "连接失败",
         errorMessage: error.message || "连接设备失败",
-        helperText: "连接失败后可以重新扫描或再次尝试连接。",
+        helperText: "如果能看到设备但连接失败，通常说明它不是目标设备，或当前不支持重新联网。",
       });
+      this.appendLog(`连接失败: ${device.name}`);
     } finally {
       this.setData({
         connecting: false,
       });
+      this.updateScanHint();
     }
   },
 
@@ -175,7 +247,7 @@ Page({
     const [, configured = "0", connected = "0", waiting = "0"] = message.split("|");
     const pieces = [];
 
-    pieces.push(configured === "1" ? "已保存 Wi-Fi" : "未保存 Wi-Fi");
+    pieces.push(configured === "1" ? "已保存 Wi‑Fi" : "未保存 Wi‑Fi");
     pieces.push(connected === "1" ? "已连网" : "未连网");
     pieces.push(waiting === "1" ? "正在等待联网结果" : "空闲");
     return pieces.join(" / ");
@@ -191,17 +263,17 @@ Page({
     if (message.startsWith("READY|")) {
       statusText = this.parseReadyStatus(message);
     } else if (message === "SAVING") {
-      statusText = "正在保存 Wi-Fi 配置";
+      statusText = "正在保存 Wi‑Fi 配置";
     } else if (message === "SAVED") {
-      statusText = "Wi-Fi 配置已保存";
+      statusText = "Wi‑Fi 配置已保存";
     } else if (message === "CONNECTING") {
-      statusText = "设备正在连接 Wi-Fi";
+      statusText = "设备正在连接 Wi‑Fi";
     } else if (message === "CONNECTED") {
-      statusText = "设备已连上 Wi-Fi";
+      statusText = "设备已连上 Wi‑Fi";
     } else if (message.startsWith("DISC|")) {
-      statusText = `Wi-Fi 断开：${message.slice(5)}`;
+      statusText = `Wi‑Fi 断开，原因 ${message.slice(5)}`;
     } else if (message === "CLEARED") {
-      statusText = "Wi-Fi 配置已清空";
+      statusText = "Wi‑Fi 配置已清空";
     } else if (message.startsWith("ERR|")) {
       statusText = `设备返回错误：${message.slice(4)}`;
     }
@@ -209,7 +281,7 @@ Page({
     this.appendLog(`设备: ${message}`);
     this.setData({
       statusText,
-      helperText: "状态由 ESP32 通过 BLE 通知实时回传，小程序这里不做本地猜测。",
+      helperText: "状态由设备实时回传，小程序这里不做本地猜测。",
     });
   },
 
@@ -231,13 +303,13 @@ Page({
 
     if (!this.connection || !this.data.connected) {
       this.setData({
-        errorMessage: "请先连接设备再下发 Wi-Fi 配置",
+        errorMessage: "请先连接设备，再下发 Wi‑Fi 配置。",
       });
       return;
     }
     if (!ssid || !password) {
       this.setData({
-        errorMessage: "SSID 和密码都不能为空",
+        errorMessage: "SSID 和密码都不能为空。",
       });
       return;
     }
@@ -247,7 +319,7 @@ Page({
         commandBusy: true,
         errorMessage: "",
       });
-      this.appendLog(`发送 Wi-Fi 配置: ${ssid}`);
+      this.appendLog(`发送 Wi‑Fi 配置: ${ssid}`);
       await bleProvision.sendCommand(this.connection, {
         cmd: "set_wifi",
         ssid,
@@ -255,7 +327,7 @@ Page({
       });
     } catch (error) {
       this.setData({
-        errorMessage: error.message || "发送 Wi-Fi 配置失败",
+        errorMessage: error.message || "发送 Wi‑Fi 配置失败。",
       });
     } finally {
       this.setData({
@@ -280,7 +352,7 @@ Page({
       });
     } catch (error) {
       this.setData({
-        errorMessage: error.message || "请求状态失败",
+        errorMessage: error.message || "请求状态失败。",
       });
     } finally {
       this.setData({
@@ -299,13 +371,13 @@ Page({
         commandBusy: true,
         errorMessage: "",
       });
-      this.appendLog("发送清空 Wi-Fi 配置命令");
+      this.appendLog("发送清空 Wi‑Fi 配置命令");
       await bleProvision.sendCommand(this.connection, {
         cmd: "clear_wifi",
       });
     } catch (error) {
       this.setData({
-        errorMessage: error.message || "清空 Wi-Fi 配置失败",
+        errorMessage: error.message || "清空 Wi‑Fi 配置失败。",
       });
     } finally {
       this.setData({
@@ -326,7 +398,7 @@ Page({
       activeDeviceId: "",
       activeDeviceName: "",
       statusText: "已主动断开",
-      helperText: "如需再次下发配置，可以重新连接设备。",
+      helperText: "如果需要再次下发配置，可以重新连接设备。",
     });
   },
 });

@@ -1,24 +1,35 @@
 <view class="page-shell ble-page">
   <view class="panel">
-    <view class="section-title">BLE 配网</view>
+    <view class="section-title">设备联网</view>
     <view class="section-subtitle">{{helperText}}</view>
 
     <view class="status-row">
       <view class="status-pill {{connected ? 'online' : (scanning ? 'pending' : 'disabled')}}">{{statusText}}</view>
       <view class="mini-actions">
         <button class="secondary-button compact-button" bindtap="onStartScanTap" wx:if="{{!scanning}}">
-          开始扫描
+          开始搜索
         </button>
         <button class="secondary-button compact-button" bindtap="onStopScanTap" wx:if="{{scanning}}">
-          停止扫描
+          停止搜索
         </button>
       </view>
     </view>
+
+    <view class="scan-meta-row">
+      <view class="scan-meta-item">附近设备：{{nearbyCount}}</view>
+      <view class="scan-meta-item">推荐设备：{{candidateCount}}</view>
+      <view class="scan-meta-item" wx:if="{{scanning}}">已搜索：{{scanElapsedSec}}s</view>
+    </view>
   </view>
 
-  <view class="panel" wx:if="{{deviceList.length}}">
-    <view class="section-title">发现设备</view>
-    <view class="section-subtitle">点击设备即可连接，默认只展示 RedPic 系列配网设备。</view>
+  <view class="panel" wx:if="{{deviceList.length || scanning}}">
+    <view class="section-title">附近设备</view>
+    <view class="section-subtitle">现在会列出附近可发现的设备。推荐设备会优先显示，但你也可以手动尝试其它设备。</view>
+
+    <view class="empty-card" wx:if="{{!deviceList.length && scanning}}">
+      <view class="empty-title">还没有发现设备</view>
+      <view class="empty-text">如果这里长时间为空，请确认手机蓝牙、定位权限以及设备已经通电。</view>
+    </view>
 
     <view
       class="device-item"
@@ -28,45 +39,49 @@
       data-device-id="{{item.deviceId}}"
     >
       <view class="setting-copy">
-        <view class="setting-title">{{item.name}}</view>
-        <view class="setting-desc">RSSI {{item.rssi}} dBm</view>
+        <view class="device-topline">
+          <view class="setting-title">{{item.name}}</view>
+          <view class="device-badge {{item.matches ? 'candidate' : 'plain'}}">{{item.badgeText}}</view>
+        </view>
+        <view class="setting-desc">{{item.matchText}}</view>
+        <view class="device-meta">{{item.signalText}}</view>
       </view>
       <view class="setting-value">连接</view>
     </view>
   </view>
 
   <view class="panel" wx:if="{{connected}}">
-    <view class="section-title">当前连接</view>
+    <view class="section-title">当前设备</view>
     <view class="section-subtitle">{{activeDeviceName}}</view>
 
-    <view class="input-label">Wi-Fi SSID</view>
+    <view class="input-label">Wi‑Fi 名称</view>
     <input
       class="setting-input"
       value="{{wifiSsid}}"
       bindinput="onSsidInput"
       maxlength="32"
-      placeholder="请输入设备要连接的 Wi-Fi 名称"
+      placeholder="请输入要连接的 Wi‑Fi 名称"
     />
 
-    <view class="input-label">Wi-Fi 密码</view>
+    <view class="input-label">Wi‑Fi 密码</view>
     <input
       class="setting-input"
       password
       value="{{wifiPassword}}"
       bindinput="onPasswordInput"
       maxlength="64"
-      placeholder="请输入 Wi-Fi 密码"
+      placeholder="请输入 Wi‑Fi 密码"
     />
 
     <view class="button-grid">
       <button class="primary-button" bindtap="onSendProvisionTap" loading="{{commandBusy}}">
-        写入 Wi-Fi
+        保存网络
       </button>
       <button class="secondary-button" bindtap="onQueryStatusTap" disabled="{{commandBusy}}">
-        查询状态
+        查看进度
       </button>
       <button class="secondary-button" bindtap="onClearWifiTap" disabled="{{commandBusy}}">
-        清空 Wi-Fi
+        清空网络
       </button>
       <button class="secondary-button" bindtap="onDisconnectTap" disabled="{{commandBusy}}">
         断开连接
@@ -75,14 +90,14 @@
   </view>
 
   <view class="panel" wx:if="{{logs.length}}">
-    <view class="section-title">状态日志</view>
-    <view class="section-subtitle">保留最近 12 条本地 BLE 交互记录，便于联调。</view>
+    <view class="section-title">连接记录</view>
+    <view class="section-subtitle">保留最近 12 条连接记录，方便排查当前联网过程。</view>
 
     <view class="log-item" wx:for="{{logs}}" wx:key="*this">{{item}}</view>
   </view>
 
   <view class="error-card" wx:if="{{errorMessage}}">
-    <view class="error-title">BLE 配网未完成</view>
+    <view class="error-title">设备联网未完成</view>
     <view class="error-text">{{errorMessage}}</view>
   </view>
 </view>
