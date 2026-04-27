@@ -1,5 +1,6 @@
 #include "app_service_bus.h"
 
+#include "esp_log.h"
 #include "ota_stm32_internal.h"
 
 #define APP_CLOUD_EVENT_QUEUE_LENGTH 16U
@@ -70,6 +71,57 @@ QueueHandle_t app_service_bus_host_frame_queue(void)
 QueueHandle_t app_service_bus_ota_frame_queue(void)
 {
     return s_ota_frame_queue;
+}
+
+esp_err_t app_service_bus_submit_cloud_event(const cloud_event_t *event)
+{
+    if (event == NULL)
+    {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_cloud_queue == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return (xQueueSendToBack(s_cloud_queue, event, 0) == pdTRUE) ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+esp_err_t app_service_bus_submit_thermal_snapshot_x10(int16_t min_temp_x10,
+                                                      int16_t max_temp_x10,
+                                                      int16_t center_temp_x10)
+{
+    cloud_event_t event = {
+        .type = CLOUD_EVT_THERMAL_SNAPSHOT,
+        .timestamp_ms = (uint32_t)esp_log_timestamp(),
+    };
+
+    event.data.thermal.min_temp_x10 = min_temp_x10;
+    event.data.thermal.max_temp_x10 = max_temp_x10;
+    event.data.thermal.center_temp_x10 = center_temp_x10;
+
+    return app_service_bus_submit_cloud_event(&event);
+}
+
+esp_err_t app_service_bus_submit_ota_status(uint8_t stage,
+                                            uint8_t percent,
+                                            uint16_t detail_code,
+                                            uint32_t current_value,
+                                            uint32_t total_value)
+{
+    cloud_event_t event = {
+        .type = CLOUD_EVT_OTA_STATUS,
+        .timestamp_ms = (uint32_t)esp_log_timestamp(),
+    };
+
+    event.data.ota_status.stage = stage;
+    event.data.ota_status.percent = percent;
+    event.data.ota_status.detail_code = detail_code;
+    event.data.ota_status.current_value = current_value;
+    event.data.ota_status.total_value = total_value;
+
+    return app_service_bus_submit_cloud_event(&event);
 }
 
 void app_service_bus_set_bits(EventBits_t bits)

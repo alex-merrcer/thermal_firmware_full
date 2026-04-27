@@ -10,26 +10,17 @@ const UNIT_OPTIONS = [
   { label: "摄氏 °C", value: "C" },
   { label: "华氏 °F", value: "F" },
 ];
+
 const PLACEHOLDER_ITEMS = [
   {
-    key: "bleProvision",
-    title: "BLE 蓝牙配网",
-    description: "当前 firmware / cloud 链路未接入可直接复用的配网流程。",
-  },
-  {
     key: "weather",
-    title: "天气功能",
-    description: "当前小程序未接入真实天气上云链路，本轮保持禁用。",
-  },
-  {
-    key: "wifiReset",
-    title: "Wi-Fi 重配",
-    description: "当前 firmware / cloud 链路未接入远程重配能力。",
+    title: "天气能力",
+    description: "后续会和 ESP32 阶段 7 一起接入，当前小程序先不展示天气实况。",
   },
   {
     key: "firmwareUpdate",
-    title: "检查固件更新",
-    description: "当前 firmware / cloud 链路未接入 OTA 详情查询。",
+    title: "固件更新详情",
+    description: "OTA 状态已经开始上云，后续会补完整的小程序升级页与版本详情。",
   },
 ];
 
@@ -172,7 +163,7 @@ Page({
       {
         temperatureUnit: next.value,
       },
-      `已切换为${next.label}`
+      `已切换为 ${next.label}`
     );
   },
 
@@ -272,6 +263,12 @@ Page({
       });
   },
 
+  onBleProvisionTap() {
+    wx.navigateTo({
+      url: "/pages/ble-provision/index",
+    });
+  },
+
   onVersionTap() {
     const app = getApp();
     const now = Date.now();
@@ -293,7 +290,7 @@ Page({
       app.grantDebugPageAccess();
       this.versionTapCount = 0;
       this.setData({
-        debugHintText: "调试页已解锁，正在进入...",
+        debugHintText: "调试页已解锁，正在进入…",
       });
       this.goDebugPage();
       return;

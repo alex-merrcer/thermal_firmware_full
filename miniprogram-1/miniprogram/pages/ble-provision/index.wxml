@@ -1,0 +1,88 @@
+<view class="page-shell ble-page">
+  <view class="panel">
+    <view class="section-title">BLE 配网</view>
+    <view class="section-subtitle">{{helperText}}</view>
+
+    <view class="status-row">
+      <view class="status-pill {{connected ? 'online' : (scanning ? 'pending' : 'disabled')}}">{{statusText}}</view>
+      <view class="mini-actions">
+        <button class="secondary-button compact-button" bindtap="onStartScanTap" wx:if="{{!scanning}}">
+          开始扫描
+        </button>
+        <button class="secondary-button compact-button" bindtap="onStopScanTap" wx:if="{{scanning}}">
+          停止扫描
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <view class="panel" wx:if="{{deviceList.length}}">
+    <view class="section-title">发现设备</view>
+    <view class="section-subtitle">点击设备即可连接，默认只展示 RedPic 系列配网设备。</view>
+
+    <view
+      class="device-item"
+      wx:for="{{deviceList}}"
+      wx:key="deviceId"
+      bindtap="onDeviceTap"
+      data-device-id="{{item.deviceId}}"
+    >
+      <view class="setting-copy">
+        <view class="setting-title">{{item.name}}</view>
+        <view class="setting-desc">RSSI {{item.rssi}} dBm</view>
+      </view>
+      <view class="setting-value">连接</view>
+    </view>
+  </view>
+
+  <view class="panel" wx:if="{{connected}}">
+    <view class="section-title">当前连接</view>
+    <view class="section-subtitle">{{activeDeviceName}}</view>
+
+    <view class="input-label">Wi-Fi SSID</view>
+    <input
+      class="setting-input"
+      value="{{wifiSsid}}"
+      bindinput="onSsidInput"
+      maxlength="32"
+      placeholder="请输入设备要连接的 Wi-Fi 名称"
+    />
+
+    <view class="input-label">Wi-Fi 密码</view>
+    <input
+      class="setting-input"
+      password
+      value="{{wifiPassword}}"
+      bindinput="onPasswordInput"
+      maxlength="64"
+      placeholder="请输入 Wi-Fi 密码"
+    />
+
+    <view class="button-grid">
+      <button class="primary-button" bindtap="onSendProvisionTap" loading="{{commandBusy}}">
+        写入 Wi-Fi
+      </button>
+      <button class="secondary-button" bindtap="onQueryStatusTap" disabled="{{commandBusy}}">
+        查询状态
+      </button>
+      <button class="secondary-button" bindtap="onClearWifiTap" disabled="{{commandBusy}}">
+        清空 Wi-Fi
+      </button>
+      <button class="secondary-button" bindtap="onDisconnectTap" disabled="{{commandBusy}}">
+        断开连接
+      </button>
+    </view>
+  </view>
+
+  <view class="panel" wx:if="{{logs.length}}">
+    <view class="section-title">状态日志</view>
+    <view class="section-subtitle">保留最近 12 条本地 BLE 交互记录，便于联调。</view>
+
+    <view class="log-item" wx:for="{{logs}}" wx:key="*this">{{item}}</view>
+  </view>
+
+  <view class="error-card" wx:if="{{errorMessage}}">
+    <view class="error-title">BLE 配网未完成</view>
+    <view class="error-text">{{errorMessage}}</view>
+  </view>
+</view>

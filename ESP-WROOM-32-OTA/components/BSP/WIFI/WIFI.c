@@ -4,11 +4,10 @@
 
 #include "app_config.h"
 #include "app_service_bus.h"
+#include "ble_provision_service.h"
 #include "../../../../protocol/ota_ctrl_protocol.h"
 
 static const char *TAG = "WIFI_HOST";
-static const char *DEFAULT_SSID = NULL;
-static const char *DEFAULT_PWD = NULL;
 
 int server_socket = -1;
 int server_connect_socket = -1;
@@ -23,6 +22,11 @@ static uint8_t s_wifi_connected = 0U;
 static uint8_t s_wifi_power_policy = OTA_HOST_POWER_POLICY_BALANCED;
 static uint8_t s_host_state = OTA_HOST_STATE_ACTIVE;
 static uint8_t s_wifi_netif_created = 0U;
+
+static const char *wifi_service_config_source_text(void)
+{
+    return app_config_wifi_is_using_bootstrap() ? "bootstrap" : "nvs";
+}
 
 static void wifi_service_init_once(void)
 {
@@ -77,28 +81,27 @@ static esp_err_t wifi_service_apply_config(void)
             .threshold.authmode = WIFI_AUTH_WPA2_PSK
         }
     };
+    const char *ssid = app_config_wifi_ssid();
+    const char *password = app_config_wifi_password();
     size_t ssid_len = 0U;
     size_t password_len = 0U;
 
-    DEFAULT_SSID = app_config_wifi_ssid();
-    DEFAULT_PWD = app_config_wifi_password();
-
-    if (DEFAULT_SSID == NULL || DEFAULT_PWD == NULL)
+    if (ssid == NULL || password == NULL)
     {
         return ESP_ERR_INVALID_ARG;
     }
 
-    ssid_len = strlen(DEFAULT_SSID);
-    password_len = strlen(DEFAULT_PWD);
-    if (ssid_len >= sizeof(wifi_config.sta.ssid) ||
-        password_len >= sizeof(wifi_config.sta.password))
+    ssid_len = strlen(ssid);
+    password_len = strlen(password);
+    if (ssid_len > sizeof(wifi_config.sta.ssid) ||
+        password_len > sizeof(wifi_config.sta.password))
     {
         ESP_LOGE(TAG, "WiFi credentials exceed ESP-IDF limits");
         return ESP_ERR_INVALID_SIZE;
     }
 
-    memcpy(wifi_config.sta.ssid, DEFAULT_SSID, ssid_len);
-    memcpy(wifi_config.sta.password, DEFAULT_PWD, password_len);
+    memcpy(wifi_config.sta.ssid, ssid, ssid_len);
+    memcpy(wifi_config.sta.password, password, password_len);
     return esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 }
 
@@ -149,6 +152,7 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id
             wifi_event_sta_disconnected_t *disc = (wifi_event_sta_disconnected_t *)event_data;
 
             s_wifi_connected = 0U;
+            ble_provision_service_on_wifi_disconnected((disc != NULL) ? disc->reason : 0U);
             app_service_bus_clear_bits(APP_EVENT_WIFI_CONNECTED);
             if (xCreatedEventGroup_WifiConnect != NULL)
             {
@@ -168,6 +172,7 @@ void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
     {
         s_wifi_connected = 1U;
+        ble_provision_service_on_wifi_connected();
         app_service_bus_set_bits(APP_EVENT_WIFI_CONNECTED);
         if (xCreatedEventGroup_WifiConnect != NULL)
         {
@@ -189,7 +194,7 @@ esp_err_t wifi_service_set_enabled(uint8_t enabled)
     {
         if (wifi_service_has_credentials() == 0U)
         {
-            ESP_LOGW(TAG, "WiFi credentials are not configured");
+            ESP_LOGW(TAG, "WiFi credentials are not configured, waiting for provisioning");
             return ESP_ERR_INVALID_ARG;
         }
 
@@ -209,7 +214,10 @@ esp_err_t wifi_service_set_enabled(uint8_t enabled)
             ESP_LOGE(TAG, "esp_wifi_set_config(STA) failed: 0x%04X", (unsigned int)err);
             return err;
         }
-        ESP_LOGI(TAG, "Apply WiFi config, ssid=%s", app_config_wifi_ssid());
+        ESP_LOGI(TAG,
+                 "Apply WiFi config, ssid=%s, source=%s",
+                 app_config_wifi_ssid(),
+                 wifi_service_config_source_text());
 
         if (s_wifi_started == 0U)
         {
@@ -287,6 +295,66 @@ esp_err_t wifi_service_apply_host_power(uint8_t power_policy, uint8_t host_state
     return wifi_service_apply_ps_mode();
 }
 
+esp_err_t wifi_service_store_credentials(const char *ssid, const char *password)
+{
+    esp_err_t err = app_config_wifi_set_credentials(ssid, password);
+
+    if (err != ESP_OK)
+    {
+        return err;
+    }
+
+    ESP_LOGI(TAG, "Stored WiFi credentials into NVS");
+
+    if (s_wifi_enabled != 0U)
+    {
+        err = wifi_service_apply_config();
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Re-apply WiFi config after credential update failed: 0x%04X", (unsigned int)err);
+            return err;
+        }
+
+        err = esp_wifi_disconnect();
+        if (err != ESP_OK &&
+            err != ESP_ERR_WIFI_NOT_STARTED &&
+            err != ESP_ERR_WIFI_CONN)
+        {
+            ESP_LOGW(TAG, "esp_wifi_disconnect after credential update failed: 0x%04X", (unsigned int)err);
+        }
+
+        err = esp_wifi_connect();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN)
+        {
+            ESP_LOGE(TAG, "esp_wifi_connect after credential update failed: 0x%04X", (unsigned int)err);
+            return err;
+        }
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t wifi_service_clear_credentials(void)
+{
+    esp_err_t err = ESP_OK;
+
+    if (s_wifi_enabled != 0U || s_wifi_started != 0U)
+    {
+        err = wifi_service_set_enabled(0U);
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+
+    err = app_config_wifi_clear_credentials();
+    if (err == ESP_OK)
+    {
+        ESP_LOGI(TAG, "Cleared WiFi credentials from NVS");
+    }
+    return err;
+}
+
 uint8_t wifi_service_is_enabled(void)
 {
     return s_wifi_enabled;
@@ -300,6 +368,11 @@ uint8_t wifi_service_is_connected(void)
 uint8_t wifi_service_has_credentials(void)
 {
     return app_config_wifi_is_configured() ? 1U : 0U;
+}
+
+uint8_t wifi_service_needs_provisioning(void)
+{
+    return (wifi_service_has_credentials() == 0U) ? 1U : 0U;
 }
 
 void wifi_init_mode(void)

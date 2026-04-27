@@ -3080,20 +3080,12 @@ static void perf_baseline_draw_timing(const app_perf_baseline_snapshot_t *snapsh
     char footer1[32];
     char footer2[40];
     const char *refresh_state = "16";
-    const char *pair_state = "OFF";
+    const char *pair_state = "ON";
 
     if (snapshot == 0)
     {
         return;
     }
-
-#if (REDPIC1_THERMAL_32HZ_AB_TEST_ENABLE != 0U)
-    refresh_state = "32";
-#endif
-
-#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ENABLE != 0U)
-    pair_state = "ON";
-#endif
 
     perf_baseline_format_triplet(value,
                                  sizeof(value),

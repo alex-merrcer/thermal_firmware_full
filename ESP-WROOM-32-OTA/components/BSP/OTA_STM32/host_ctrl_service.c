@@ -3,16 +3,14 @@
 #include <inttypes.h>
 #include <stdio.h>
 
-#include "BLUE.h"
 #include "KEY.h"
 #include "UART.h"
 #include "WIFI.h"
-#include "cloud_mqtt_service.h"
+#include "app_service_bus.h"
+#include "ble_provision_service.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "esp_attr.h"
-#include "esp_bt.h"
-#include "esp_bt_main.h"
 #include "esp_sleep.h"
 #include "freertos/task.h"
 #include "lib_lcd7735.h"
@@ -111,7 +109,7 @@ static void host_ctrl_forward_thermal_snapshot_to_cloud(const uint8_t *payload, 
     max_temp_x10 = host_ctrl_read_i16le(&payload[3]);
     center_temp_x10 = host_ctrl_read_i16le(&payload[5]);
 
-    err = cloud_mqtt_service_submit_thermal_snapshot_x10(min_temp_x10, max_temp_x10, center_temp_x10);
+    err = app_service_bus_submit_thermal_snapshot_x10(min_temp_x10, max_temp_x10, center_temp_x10);
     if (err != ESP_OK)
     {
         ESP_LOGW(TAG, "Queue thermal snapshot to cloud service failed: 0x%04X", (unsigned int)err);
@@ -227,13 +225,13 @@ static void host_ctrl_debug_render(void)
     LCD_Fill(0, 0, 159, 127, BLACK);
     LCD_ShowString(6, 6, 150, 16, 16, (unsigned char *)"ESP32 DEBUG", GREEN, BLACK);
 
-    snprintf(line, sizeof(line), "WiFi   %s", (s_wifi_requested != 0U) ? "ON" : "OFF");
+    snprintf(line, sizeof(line), "WiFi   %s", (wifi_service_is_enabled() != 0U) ? "ON" : "OFF");
     LCD_ShowString(6, 28, 150, 16, 16, (unsigned char *)line, WHITE, BLACK);
 
     snprintf(line, sizeof(line), "Link   %s", (wifi_service_is_connected() != 0U) ? "OK" : "IDLE");
     LCD_ShowString(6, 46, 150, 16, 16, (unsigned char *)line, WHITE, BLACK);
 
-    snprintf(line, sizeof(line), "BLE    %s", (s_ble_requested != 0U) ? "ON" : "OFF");
+    snprintf(line, sizeof(line), "BLE    %s", (s_ble_enabled != 0U) ? "ON" : "OFF");
     LCD_ShowString(6, 64, 150, 16, 16, (unsigned char *)line, WHITE, BLACK);
 
     snprintf(line, sizeof(line), "Pwr    %s", host_ctrl_power_policy_text(s_power_policy));
@@ -249,57 +247,36 @@ static void host_ctrl_debug_render(void)
 
 static esp_err_t host_ctrl_ble_set_enabled(uint8_t enabled)
 {
-    esp_bluedroid_status_t bluedroid_status = esp_bluedroid_get_status();
-    esp_bt_controller_status_t controller_status = esp_bt_controller_get_status();
+    esp_err_t err = ble_provision_service_set_enabled(enabled);
 
-    if (enabled != 0U)
+    if (err == ESP_OK)
     {
-        if (s_ble_enabled != 0U)
-        {
-            return ESP_OK;
-        }
-
-        BLUE_Init();
-        s_ble_enabled = 1U;
-        return ESP_OK;
+        s_ble_enabled = (enabled != 0U) ? 1U : 0U;
     }
 
-    if (bluedroid_status == ESP_BLUEDROID_STATUS_ENABLED)
-    {
-        ESP_ERROR_CHECK(esp_bluedroid_disable());
-    }
-    if (bluedroid_status != ESP_BLUEDROID_STATUS_UNINITIALIZED)
-    {
-        ESP_ERROR_CHECK(esp_bluedroid_deinit());
-    }
-    if (controller_status == ESP_BT_CONTROLLER_STATUS_ENABLED)
-    {
-        ESP_ERROR_CHECK(esp_bt_controller_disable());
-    }
-    if (controller_status != ESP_BT_CONTROLLER_STATUS_IDLE)
-    {
-        ESP_ERROR_CHECK(esp_bt_controller_deinit());
-    }
-
-    s_ble_enabled = 0U;
-    return ESP_OK;
+    return err;
 }
 
 static void host_ctrl_apply_requested_radios(void)
 {
-    if (wifi_service_is_enabled() != s_wifi_requested)
+    uint8_t wifi_target = s_wifi_requested;
+    uint8_t ble_target = (uint8_t)((s_ble_requested != 0U) ||
+                                   (wifi_service_needs_provisioning() != 0U) ||
+                                   (ble_provision_service_should_force_ble() != 0U));
+
+    if (wifi_service_is_enabled() != wifi_target)
     {
-        if (wifi_service_set_enabled(s_wifi_requested) != ESP_OK)
+        if (wifi_service_set_enabled(wifi_target) != ESP_OK)
         {
-            ESP_LOGW(TAG, "Failed to apply WiFi request=%u", (unsigned int)s_wifi_requested);
+            ESP_LOGW(TAG, "Failed to apply WiFi request=%u", (unsigned int)wifi_target);
         }
     }
 
-    if (s_ble_enabled != s_ble_requested)
+    if (s_ble_enabled != ble_target)
     {
-        if (host_ctrl_ble_set_enabled(s_ble_requested) != ESP_OK)
+        if (host_ctrl_ble_set_enabled(ble_target) != ESP_OK)
         {
-            ESP_LOGW(TAG, "Failed to apply BLE request=%u", (unsigned int)s_ble_requested);
+            ESP_LOGW(TAG, "Failed to apply BLE request=%u", (unsigned int)ble_target);
         }
     }
 
@@ -348,7 +325,7 @@ static uint32_t host_ctrl_status_bits(void)
 {
     uint32_t bits = 0U;
 
-    if (s_wifi_requested != 0U)
+    if (wifi_service_is_enabled() != 0U)
     {
         bits |= OTA_HOST_STATUS_WIFI_ENABLED;
     }
@@ -356,7 +333,7 @@ static uint32_t host_ctrl_status_bits(void)
     {
         bits |= OTA_HOST_STATUS_WIFI_CONNECTED;
     }
-    if (s_ble_requested != 0U)
+    if (s_ble_enabled != 0U)
     {
         bits |= OTA_HOST_STATUS_BLE_ENABLED;
     }
@@ -687,7 +664,7 @@ void host_ctrl_service_init(void)
     s_last_logged_result = 0xFFU;
     s_pending_sleep = HOST_CTRL_SLEEP_NONE;
     s_awake_hold_deadline = 0;
-    s_pending_runtime_apply = 0U;
+    s_pending_runtime_apply = 1U;
     s_manual_sleep_diag = 0U;
     s_uart_wake_block_count = 0U;
 
@@ -697,6 +674,17 @@ void host_ctrl_service_init(void)
     host_ctrl_restore_deep_ctx(wake_cause);
 
     ESP_LOGI(TAG, "Wake cause=%s", host_ctrl_wakeup_cause_text(wake_cause));
+}
+
+void host_ctrl_service_request_wifi(uint8_t enabled)
+{
+    s_wifi_requested = (enabled != 0U) ? 1U : 0U;
+    s_pending_runtime_apply = 1U;
+}
+
+void host_ctrl_service_request_runtime_apply(void)
+{
+    s_pending_runtime_apply = 1U;
 }
 
 void host_ctrl_service_step(void)

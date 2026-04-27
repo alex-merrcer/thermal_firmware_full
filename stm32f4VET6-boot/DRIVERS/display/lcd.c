@@ -1,6 +1,5 @@
 #include "lcd.h"
 #include "lcd_init.h"
-#include "lcdfont.h"
 #include "delay.h"
 
 

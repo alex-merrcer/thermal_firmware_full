@@ -1,5 +1,7 @@
 #include "cloud_mqtt_service.h"
 
+#include <inttypes.h>
+
 #include "MQTT.h"
 #include "app_service_bus.h"
 #include "esp_log.h"
@@ -31,7 +33,20 @@ static void cloud_mqtt_service_handle_event(const cloud_event_t *event)
 
     case CLOUD_EVT_DEVICE_STATUS:
     case CLOUD_EVT_WEATHER_UPDATE:
+        ESP_LOGD(TAG, "Cloud event type=%d is reserved for later phases", (int)event->type);
+        break;
+
     case CLOUD_EVT_OTA_STATUS:
+        if (mqtt_service_submit_ota_status(event->data.ota_status.stage,
+                                           event->data.ota_status.percent,
+                                           event->data.ota_status.detail_code,
+                                           event->data.ota_status.current_value,
+                                           event->data.ota_status.total_value) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "OTA status submit to MQTT service failed");
+        }
+        break;
+
     case CLOUD_EVT_DIAGNOSTICS:
     default:
         ESP_LOGD(TAG, "Cloud event type=%d is reserved for later phases", (int)event->type);
@@ -93,20 +108,7 @@ esp_err_t cloud_mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
                                                          int16_t max_temp_x10,
                                                          int16_t center_temp_x10)
 {
-    QueueHandle_t queue = app_service_bus_cloud_queue();
-    cloud_event_t event = {
-        .type = CLOUD_EVT_THERMAL_SNAPSHOT,
-        .timestamp_ms = (uint32_t)esp_log_timestamp(),
-    };
-
-    if (queue == NULL)
-    {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    event.data.thermal.min_temp_x10 = min_temp_x10;
-    event.data.thermal.max_temp_x10 = max_temp_x10;
-    event.data.thermal.center_temp_x10 = center_temp_x10;
-
-    return (xQueueSendToBack(queue, &event, 0) == pdTRUE) ? ESP_OK : ESP_ERR_NO_MEM;
+    return app_service_bus_submit_thermal_snapshot_x10(min_temp_x10,
+                                                       max_temp_x10,
+                                                       center_temp_x10);
 }

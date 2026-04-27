@@ -4,6 +4,10 @@
 /*
  * Copy this file to app_private_config.h in the same directory and fill in the
  * real values. Keep app_private_config.h out of version control.
+ *
+ * Wi-Fi credentials are no longer the primary runtime source in phase 5.
+ * If you keep the two Wi-Fi macros below, the firmware will only use them as a
+ * one-time bootstrap source and then persist them into NVS.
  */
 
 #define APP_PRIVATE_WIFI_SSID "your_wifi_ssid"
@@ -17,9 +21,6 @@
 
 #define APP_PRIVATE_WEATHER_BASE_URL "http://api.seniverse.com"
 #define APP_PRIVATE_WEATHER_API_KEY "your_weather_api_key"
-
-#define APP_PRIVATE_DEEPSEEK_API_URL "https://api.deepseek.com/v1/chat/completions"
-#define APP_PRIVATE_DEEPSEEK_API_KEY "your_deepseek_api_key"
 
 #define APP_FEATURE_ENABLE_BLE_PROVISION_STARTUP 0U
 #define APP_FEATURE_ENABLE_WEATHER_SERVICE_STARTUP 0U

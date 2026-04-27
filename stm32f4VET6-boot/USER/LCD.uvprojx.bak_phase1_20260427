@@ -314,7 +314,7 @@
             <Optim>1</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
-            <OneElfS>1</OneElfS>
+            <OneElfS>0</OneElfS>
             <Strict>0</Strict>
             <EnumInt>0</EnumInt>
             <PlainCh>0</PlainCh>
@@ -337,7 +337,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,ARM_MATH_MATRIX_CHECK,ARM_MATH_ROUNDING,ARM_MATH_CM4,__CC_ARM,__FPU_PRESENT=1</Define>
               <Undefine></Undefine>
-              <IncludePath>..\CORE;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\USER;..\FWLIB\inc;..\DSP_LIB\include;..\DRIVERS\board;..\DRIVERS\display;..\DRIVERS\flash;..\DRIVERS\crypto;..\PROTOCOL\ymodem;..\PROTOCOL\ota_ctrl;..\IAP\core;..\IAP\boot_entry;..\IAP\boot_info;..\IAP\platform;..\IAP\auth;..\IAP\ui;..\..\protocol</IncludePath>
+              <IncludePath>..\CORE;..\SYSTEM\delay;..\SYSTEM\sys;..\SYSTEM\usart;..\USER;..\HARDWARE\LED;..\HARDWARE\LCD;..\FWLIB\inc;..\HARDWARE\MLX90640;..\HARDWARE\MLX90640_API;..\HARDWARE\MLX90640_DRIVER;..\DSP_LIB\include;..\HARDWARE\IAP;..\HARDWARE\STMFLASH;..\HARDWARE\KEY;..\HARDWARE\OTA;..\HARDWARE\IWDG;..\HARDWARE\AES;..\..\protocol</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -379,18 +379,13 @@
       </TargetOption>
       <Groups>
         <Group>
-          <GroupName>project/entry</GroupName>
+          <GroupName>USER</GroupName>
           <Files>
             <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\main.c</FilePath>
             </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>platform/system</GroupName>
-          <Files>
             <File>
               <FileName>stm32f4xx_it.c</FileName>
               <FileType>1</FileType>
@@ -401,6 +396,86 @@
               <FileType>1</FileType>
               <FilePath>.\system_stm32f4xx.c</FilePath>
             </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>HARDWARE</GroupName>
+          <Files>
+            <File>
+              <FileName>led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\LED\led.c</FilePath>
+            </File>
+            <File>
+              <FileName>lcd_init.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\LCD\lcd_init.c</FilePath>
+            </File>
+            <File>
+              <FileName>lcd_boot_text.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\LCD\lcd_boot_text.c</FilePath>
+            </File>
+            <File>
+              <FileName>key.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\KEY\key.c</FilePath>
+            </File>
+            <File>
+              <FileName>common.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\OTA\common.c</FilePath>
+            </File>
+            <File>
+              <FileName>flash_if.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\OTA\flash_if.c</FilePath>
+            </File>
+            <File>
+              <FileName>ymodem.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\OTA\ymodem.c</FilePath>
+            </File>
+            <File>
+              <FileName>iap.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\IAP\iap.c</FilePath>
+            </File>
+            <File>
+              <FileName>iap_boot_info.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\IAP\iap_boot_info.c</FilePath>
+            </File>
+            <File>
+              <FileName>iap_ui.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\IAP\iap_ui.c</FilePath>
+            </File>
+            <File>
+              <FileName>iap_ctrl.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\IAP\iap_ctrl.c</FilePath>
+            </File>
+            <File>
+              <FileName>iap_platform.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\IAP\iap_platform.c</FilePath>
+            </File>
+            <File>
+              <FileName>iap_auth.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\IAP\iap_auth.c</FilePath>
+            </File>
+            <File>
+              <FileName>aes.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\HARDWARE\AES\aes.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>SYSTEM</GroupName>
+          <Files>
             <File>
               <FileName>delay.c</FileName>
               <FileType>1</FileType>
@@ -411,21 +486,6 @@
               <FileType>1</FileType>
               <FilePath>..\SYSTEM\sys\sys.c</FilePath>
             </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>platform/startup</GroupName>
-          <Files>
-            <File>
-              <FileName>startup_stm32f40_41xxx.s</FileName>
-              <FileType>2</FileType>
-              <FilePath>..\CORE\startup_stm32f40_41xxx.s</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>drivers/uart</GroupName>
-          <Files>
             <File>
               <FileName>usart.c</FileName>
               <FileType>1</FileType>
@@ -439,137 +499,12 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>drivers/board</GroupName>
+          <GroupName>CORE</GroupName>
           <Files>
             <File>
-              <FileName>led.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\board\led.c</FilePath>
-            </File>
-            <File>
-              <FileName>key.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\board\key.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>drivers/display</GroupName>
-          <Files>
-            <File>
-              <FileName>lcd_init.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\display\lcd_init.c</FilePath>
-            </File>
-            <File>
-              <FileName>lcd_boot_text.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\display\lcd_boot_text.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>drivers/flash</GroupName>
-          <Files>
-            <File>
-              <FileName>common.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\flash\common.c</FilePath>
-            </File>
-            <File>
-              <FileName>flash_if.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\flash\flash_if.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>drivers/crypto</GroupName>
-          <Files>
-            <File>
-              <FileName>aes.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\DRIVERS\crypto\aes.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>protocol/ymodem</GroupName>
-          <Files>
-            <File>
-              <FileName>ymodem.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\PROTOCOL\ymodem\ymodem.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>protocol/ota_ctrl</GroupName>
-          <Files>
-            <File>
-              <FileName>iap_ctrl.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\PROTOCOL\ota_ctrl\iap_ctrl.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>iap/core</GroupName>
-          <Files>
-            <File>
-              <FileName>iap.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\IAP\core\iap.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>iap/boot_entry</GroupName>
-          <Files>
-            <File>
-              <FileName>iap_boot_entry.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\IAP\boot_entry\iap_boot_entry.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>iap/boot_info</GroupName>
-          <Files>
-            <File>
-              <FileName>iap_boot_info.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\IAP\boot_info\iap_boot_info.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>iap/platform</GroupName>
-          <Files>
-            <File>
-              <FileName>iap_platform.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\IAP\platform\iap_platform.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>iap/auth</GroupName>
-          <Files>
-            <File>
-              <FileName>iap_auth.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\IAP\auth\iap_auth.c</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>iap/ui</GroupName>
-          <Files>
-            <File>
-              <FileName>iap_ui.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\IAP\ui\iap_ui.c</FilePath>
+              <FileName>startup_stm32f40_41xxx.s</FileName>
+              <FileType>2</FileType>
+              <FilePath>..\CORE\startup_stm32f40_41xxx.s</FilePath>
             </File>
           </Files>
         </Group>

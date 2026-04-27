@@ -36,8 +36,11 @@ esp_err_t CreateTcpServer(bool isCreatServer, uint16_t port);
 
 esp_err_t wifi_service_set_enabled(uint8_t enabled);
 esp_err_t wifi_service_apply_host_power(uint8_t power_policy, uint8_t host_state);
+esp_err_t wifi_service_store_credentials(const char *ssid, const char *password);
+esp_err_t wifi_service_clear_credentials(void);
 uint8_t wifi_service_is_enabled(void);
 uint8_t wifi_service_is_connected(void);
 uint8_t wifi_service_has_credentials(void);
+uint8_t wifi_service_needs_provisioning(void);
 
 #endif

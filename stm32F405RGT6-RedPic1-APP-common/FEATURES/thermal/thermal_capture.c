@@ -9,38 +9,6 @@
 #include "redpic1_thermal.h"
 
 #define THERMAL_CAPTURE_BACKOFF_MS                20UL
-#define THERMAL_CAPTURE_RESTORE_THRESHOLD         3U
-#define THERMAL_CAPTURE_MLX90640_REG_STATUS       0x8000U
-#define THERMAL_CAPTURE_STATUS_DATA_READY_MASK    (1U << 3)
-
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U)
-    #define THERMAL_CAPTURE_STAGE6R_1_ACTIVE 1U
-#else
-    #define THERMAL_CAPTURE_STAGE6R_1_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_2_ENABLE != 0U)
-    #define THERMAL_CAPTURE_STAGE6R_2_ACTIVE 1U
-#else
-    #define THERMAL_CAPTURE_STAGE6R_2_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_2_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_3_ENABLE != 0U)
-    #define THERMAL_CAPTURE_STAGE6R_3_ACTIVE 1U
-#else
-    #define THERMAL_CAPTURE_STAGE6R_3_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ENABLE != 0U)
-    #define THERMAL_CAPTURE_FULL_SUBPAGE_PAIR_ACTIVE 1U
-#else
-    #define THERMAL_CAPTURE_FULL_SUBPAGE_PAIR_ACTIVE 0U
-#endif
 
 static redpic1_thermal_capture_ops_t s_ops;
 static uint32_t s_backoff_until_ms = 0U;
@@ -115,8 +83,6 @@ void redpic1_thermal_capture_note_backoff(uint8_t transport_related)
     if (transport_related != 0U)
     {
         s_consecutive_transport_failures++;
-
-#if (THERMAL_CAPTURE_STAGE6R_3_ACTIVE != 0U)
         if (s_consecutive_transport_failures == 1U)
         {
             s_backoff_until_ms = now_ms + 2U;
@@ -130,13 +96,6 @@ void redpic1_thermal_capture_note_backoff(uint8_t transport_related)
             s_restore_bus_pending = 1U;
             s_backoff_until_ms = now_ms + THERMAL_CAPTURE_BACKOFF_MS;
         }
-#else
-        s_backoff_until_ms = now_ms + THERMAL_CAPTURE_BACKOFF_MS;
-        if (s_consecutive_transport_failures >= THERMAL_CAPTURE_RESTORE_THRESHOLD)
-        {
-            s_restore_bus_pending = 1U;
-        }
-#endif
     }
     else
     {
@@ -161,26 +120,6 @@ uint8_t redpic1_thermal_capture_prepare_step(void)
         redpic1_thermal_capture_restore_bus_now();
     }
 
-#if (THERMAL_CAPTURE_STAGE6R_1_ACTIVE == 0U)
-    {
-        uint16_t state = 0U;
-
-        if (MLX90640_I2CRead(MLX90640_ADDR,
-                             THERMAL_CAPTURE_MLX90640_REG_STATUS,
-                             1,
-                             &state) != 0)
-        {
-            redpic1_thermal_capture_note_backoff(1U);
-            return 0U;
-        }
-
-        if ((state & THERMAL_CAPTURE_STATUS_DATA_READY_MASK) == 0U)
-        {
-            return 0U;
-        }
-    }
-#endif
-
     return 1U;
 }
 
@@ -201,11 +140,7 @@ uint8_t redpic1_thermal_capture_read_frame(float *frame_data,
     }
 
     get_temp_start_cycle = app_perf_baseline_cycle_now();
-#if (THERMAL_CAPTURE_FULL_SUBPAGE_PAIR_ACTIVE != 0U)
     temp_status = get_temp_ex(frame_data, &ta, &captured_subpage);
-#else
-    temp_status = get_temp(frame_data, &ta);
-#endif
     get_temp_elapsed_us = app_perf_baseline_elapsed_us(get_temp_start_cycle);
     app_perf_baseline_record_get_temp_us(get_temp_elapsed_us);
 
@@ -216,14 +151,12 @@ uint8_t redpic1_thermal_capture_read_frame(float *frame_data,
 
     if (temp_status < 0)
     {
-#if (THERMAL_CAPTURE_STAGE6R_2_ACTIVE != 0U)
         if (temp_status == -9)
         {
             app_perf_baseline_record_thermal_soft_timeout();
             redpic1_thermal_capture_note_backoff(0U);
         }
         else
-#endif
         {
             redpic1_thermal_capture_invalidate_history();
             redpic1_thermal_capture_note_backoff(1U);

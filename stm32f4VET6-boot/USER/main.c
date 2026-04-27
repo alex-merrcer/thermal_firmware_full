@@ -23,9 +23,6 @@ int main(void)
     uart_rx_ring_reset();
     KEY_Init();
 
-		//jump_to_app(APPLICATION_ADDRESS);
-
-		//jump_to_app(FLASH_APP1_ADDR);
     /* Bootloader启动入口 */
     iap_boot_entry();
     
@@ -34,13 +31,5 @@ int main(void)
     while (1)
     {
     }
-    
-//	while(1)
-//	{
-//			LCD_ShowString(0, 20, (u8 *)"put key0 to app1", GREEN, WHITE, 12, 0);
-//	LCD_ShowString(0, 40, (u8 *)"put key1 to app2", GREEN, WHITE, 12, 0);
-//			key = KEY_Scan(0);
-//	if(key==KEY0_PRES) jump_to_app(FLASH_APP1_ADDR);
-//	if(key==KEY1_PRES) jump_to_app(FLASH_APP2_ADDR);
-//	}    
+      
 }

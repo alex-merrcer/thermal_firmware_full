@@ -235,6 +235,7 @@ void iap_show_resume_decision(uint8_t accepted,
                               uint32_t saved_offset,
                               uint32_t total_size);
 void iap_ui_show_boot_splash(void);
+void iap_ui_run_normal_boot_2s(uint8_t feed_watchdog);
 void iap_ui_boot_prepare(uint8_t warm_handoff);
 void iap_ui_show_upgrade_prepare(void);
 void iap_ui_show_upgrade_success(void);

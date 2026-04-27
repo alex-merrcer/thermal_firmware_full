@@ -4,30 +4,34 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "esp_err.h"
+
+#define APP_CONFIG_PLACEHOLDER_TEXT "__APP_CONFIG_NOT_SET__"
+#define APP_CONFIG_WIFI_SSID_MAX_LEN 32U
+#define APP_CONFIG_WIFI_PASSWORD_MAX_LEN 64U
+
 #if __has_include("app_private_config.h")
 #include "app_private_config.h"
 #endif
 
-#define APP_CONFIG_PLACEHOLDER_TEXT "__APP_CONFIG_NOT_SET__"
-
 #ifndef APP_PRIVATE_WIFI_SSID
-#define APP_PRIVATE_WIFI_SSID "TP-LINK_D388"
+#define APP_PRIVATE_WIFI_SSID APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_PRIVATE_WIFI_PASSWORD
-#define APP_PRIVATE_WIFI_PASSWORD "13534408305"
+#define APP_PRIVATE_WIFI_PASSWORD APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_PRIVATE_ALIYUN_PRODUCT_KEY
-#define APP_PRIVATE_ALIYUN_PRODUCT_KEY "k1jy7ZTTQ8V"
+#define APP_PRIVATE_ALIYUN_PRODUCT_KEY APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_PRIVATE_ALIYUN_DEVICE_NAME
-#define APP_PRIVATE_ALIYUN_DEVICE_NAME "ESP32-WROOM-32"
+#define APP_PRIVATE_ALIYUN_DEVICE_NAME APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_PRIVATE_ALIYUN_DEVICE_SECRET
-#define APP_PRIVATE_ALIYUN_DEVICE_SECRET "6d699c5733d561787e8d08acbc807e4c"
+#define APP_PRIVATE_ALIYUN_DEVICE_SECRET APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_PRIVATE_ALIYUN_REGION_ID
@@ -35,7 +39,7 @@
 #endif
 
 #ifndef APP_PRIVATE_ALIYUN_MQTT_HOST
-#define APP_PRIVATE_ALIYUN_MQTT_HOST "iot-06z00fpcn2h806i.mqtt.iothub.aliyuncs.com"
+#define APP_PRIVATE_ALIYUN_MQTT_HOST APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_PRIVATE_WEATHER_BASE_URL
@@ -44,14 +48,6 @@
 
 #ifndef APP_PRIVATE_WEATHER_API_KEY
 #define APP_PRIVATE_WEATHER_API_KEY APP_CONFIG_PLACEHOLDER_TEXT
-#endif
-
-#ifndef APP_PRIVATE_DEEPSEEK_API_URL
-#define APP_PRIVATE_DEEPSEEK_API_URL "https://api.deepseek.com/v1/chat/completions"
-#endif
-
-#ifndef APP_PRIVATE_DEEPSEEK_API_KEY
-#define APP_PRIVATE_DEEPSEEK_API_KEY APP_CONFIG_PLACEHOLDER_TEXT
 #endif
 
 #ifndef APP_FEATURE_ENABLE_BLE_PROVISION_STARTUP
@@ -73,9 +69,13 @@
 #define APP_THERMAL_PROP_MIN_TEMP "MinTemp"
 #define APP_THERMAL_PROP_MAX_TEMP "MaxTemp"
 #define APP_THERMAL_PROP_CENTER_TEMP "CenterTemp"
+#define APP_OTA_PROP_STATE "OtaState"
 
 const char *app_config_wifi_ssid(void);
 const char *app_config_wifi_password(void);
+esp_err_t app_config_wifi_reload(void);
+esp_err_t app_config_wifi_set_credentials(const char *ssid, const char *password);
+esp_err_t app_config_wifi_clear_credentials(void);
 const char *app_config_cloud_product_key(void);
 const char *app_config_cloud_device_name(void);
 const char *app_config_cloud_device_secret(void);
@@ -83,14 +83,12 @@ const char *app_config_cloud_region_id(void);
 const char *app_config_cloud_mqtt_host(void);
 const char *app_config_weather_base_url(void);
 const char *app_config_weather_api_key(void);
-const char *app_config_deepseek_api_url(void);
-const char *app_config_deepseek_api_key(void);
 
 bool app_config_is_placeholder_value(const char *value);
 bool app_config_wifi_is_configured(void);
+bool app_config_wifi_is_using_bootstrap(void);
 bool app_config_cloud_mqtt_is_configured(void);
 bool app_config_weather_is_configured(void);
-bool app_config_deepseek_is_configured(void);
 bool app_config_build_weather_now_url(char *buffer, size_t buffer_len, const char *city_name);
 
 #endif

@@ -39,6 +39,15 @@ typedef struct
 
         struct
         {
+            uint8_t stage;
+            uint8_t percent;
+            uint16_t detail_code;
+            uint32_t current_value;
+            uint32_t total_value;
+        } ota_status;
+
+        struct
+        {
             int32_t value0;
             int32_t value1;
             int32_t value2;
@@ -84,6 +93,15 @@ EventGroupHandle_t app_service_bus_event_group(void);
 QueueHandle_t app_service_bus_cloud_queue(void);
 QueueHandle_t app_service_bus_host_frame_queue(void);
 QueueHandle_t app_service_bus_ota_frame_queue(void);
+esp_err_t app_service_bus_submit_cloud_event(const cloud_event_t *event);
+esp_err_t app_service_bus_submit_thermal_snapshot_x10(int16_t min_temp_x10,
+                                                      int16_t max_temp_x10,
+                                                      int16_t center_temp_x10);
+esp_err_t app_service_bus_submit_ota_status(uint8_t stage,
+                                            uint8_t percent,
+                                            uint16_t detail_code,
+                                            uint32_t current_value,
+                                            uint32_t total_value);
 void app_service_bus_set_bits(EventBits_t bits);
 void app_service_bus_clear_bits(EventBits_t bits);
 EventBits_t app_service_bus_get_bits(void);

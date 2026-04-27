@@ -4,9 +4,6 @@
 
 #include "redpic1_thermal.h"
 
-#define THERMAL_VISUAL_STAGE6L_2_MOTION_HOT_DELTA_C   0.60f
-#define THERMAL_VISUAL_STAGE6L_2_MOTION_MAX_DELTA_C   1.50f
-#define THERMAL_VISUAL_STAGE6L_2_MOTION_HOT_PIXELS    64U
 #define THERMAL_VISUAL_SRC_ROWS                       24U
 #define THERMAL_VISUAL_SRC_COLS                       32U
 #define THERMAL_VISUAL_PIXEL_COUNT                    768U
@@ -16,51 +13,7 @@
 #define THERMAL_VISUAL_DISPLAY_WINDOW_MIN_SPAN_C      1.5f
 #define THERMAL_VISUAL_DISPLAY_WINDOW_EMA_ALPHA       REDPIC1_THERMAL_STAGEP7_NORMAL_EMA_ALPHA
 #define THERMAL_VISUAL_DISPLAY_WINDOW_MAX_STEP_C      REDPIC1_THERMAL_STAGEP7_NORMAL_MAX_STEP_C
-#define THERMAL_VISUAL_DISPLAY_WINDOW_FAST_EMA_ALPHA  REDPIC1_THERMAL_STAGEP7_HIGH_MOTION_EMA_ALPHA
-#define THERMAL_VISUAL_DISPLAY_WINDOW_FAST_MAX_STEP_C REDPIC1_THERMAL_STAGEP7_HIGH_MOTION_MAX_STEP_C
 #define THERMAL_VISUAL_DISPLAY_WINDOW_HALF_SPAN_C     (THERMAL_VISUAL_DISPLAY_WINDOW_MIN_SPAN_C * 0.5f)
-
-#if (REDPIC1_THERMAL_STAGE6L_ENABLE != 0U) && (REDPIC1_THERMAL_STAGE6L_1_ENABLE != 0U)
-    #define THERMAL_VISUAL_STAGE6L_1_ACTIVE 1U
-#else
-    #define THERMAL_VISUAL_STAGE6L_1_ACTIVE 0U
-#endif
-
-#if (THERMAL_VISUAL_STAGE6L_1_ACTIVE != 0U) && (REDPIC1_THERMAL_STAGE6L_1_WINDOW_ENABLE != 0U)
-    #define THERMAL_VISUAL_WINDOW_PATH_ENABLED 1U
-#else
-    #define THERMAL_VISUAL_WINDOW_PATH_ENABLED 0U
-#endif
-
-#if (THERMAL_VISUAL_STAGE6L_1_ACTIVE != 0U) && (REDPIC1_THERMAL_STAGE6L_1_FILTER_ENABLE != 0U)
-    #define THERMAL_VISUAL_FILTER_PATH_ENABLED 1U
-#else
-    #define THERMAL_VISUAL_FILTER_PATH_ENABLED 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGE6L_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6L_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6L_2_ENABLE != 0U)
-    #define THERMAL_VISUAL_STAGEP5_ACTIVE 1U
-#else
-    #define THERMAL_VISUAL_STAGEP5_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGE6L_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6L_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6L_3_ENABLE != 0U)
-    #define THERMAL_VISUAL_STAGEP6_ACTIVE 1U
-#else
-    #define THERMAL_VISUAL_STAGEP6_ACTIVE 0U
-#endif
-
-#if (THERMAL_VISUAL_STAGE6L_1_ACTIVE != 0U) && \
-    (THERMAL_VISUAL_STAGEP5_ACTIVE != 0U) && \
-    (REDPIC1_THERMAL_STAGEP7_ENABLE != 0U)
-    #define THERMAL_VISUAL_STAGEP7_ACTIVE 1U
-#else
-    #define THERMAL_VISUAL_STAGEP7_ACTIVE 0U
-#endif
 
 static float s_display_min_temp = 0.0f;
 static float s_display_max_temp = 0.0f;
@@ -68,21 +21,6 @@ static uint8_t s_display_window_valid = 0U;
 static CCMRAM float s_previous_filtered_temp_frame[THERMAL_VISUAL_PIXEL_COUNT];
 static CCMRAM float s_current_visual_temp_frame[THERMAL_VISUAL_PIXEL_COUNT];
 static uint8_t s_filter_history_valid = 0U;
-
-#if THERMAL_VISUAL_STAGEP6_ACTIVE
-static redpic1_thermal_visual_ops_t s_ops;
-static uint32_t s_last_capture_tick_ms = 0U;
-
-static uint32_t redpic1_thermal_visual_get_active_period_ms(void)
-{
-    if (s_ops.get_active_period_ms != 0)
-    {
-        return s_ops.get_active_period_ms();
-    }
-
-    return 0U;
-}
-#endif
 
 static void redpic1_thermal_visual_reset_display_window_state(void)
 {
@@ -114,41 +52,12 @@ static float redpic1_thermal_visual_limit_display_window_step(float current_valu
     return current_value + delta;
 }
 
-static void redpic1_thermal_visual_get_display_window_response(uint8_t high_motion_frame,
-                                                               float *out_ema_alpha,
-                                                               float *out_max_step_c)
-{
-    float ema_alpha = THERMAL_VISUAL_DISPLAY_WINDOW_EMA_ALPHA;
-    float max_step_c = THERMAL_VISUAL_DISPLAY_WINDOW_MAX_STEP_C;
-
-#if THERMAL_VISUAL_STAGEP7_ACTIVE
-    if (high_motion_frame != 0U)
-    {
-        ema_alpha = THERMAL_VISUAL_DISPLAY_WINDOW_FAST_EMA_ALPHA;
-        max_step_c = THERMAL_VISUAL_DISPLAY_WINDOW_FAST_MAX_STEP_C;
-    }
-#else
-    (void)high_motion_frame;
-#endif
-
-    if (out_ema_alpha != 0)
-    {
-        *out_ema_alpha = ema_alpha;
-    }
-
-    if (out_max_step_c != 0)
-    {
-        *out_max_step_c = max_step_c;
-    }
-}
-
 static void redpic1_thermal_visual_get_display_window(float raw_min_temp,
                                                       float raw_max_temp,
                                                       uint8_t high_motion_frame,
                                                       float *out_display_min_temp,
                                                       float *out_display_max_temp)
 {
-#if THERMAL_VISUAL_WINDOW_PATH_ENABLED
     float ema_alpha = THERMAL_VISUAL_DISPLAY_WINDOW_EMA_ALPHA;
     float max_step_c = THERMAL_VISUAL_DISPLAY_WINDOW_MAX_STEP_C;
     float center_temp = (raw_min_temp + raw_max_temp) * 0.5f;
@@ -156,6 +65,8 @@ static void redpic1_thermal_visual_get_display_window(float raw_min_temp,
                             THERMAL_VISUAL_DISPLAY_WINDOW_HALF_SPAN_C);
     float target_min_temp = center_temp - half_span;
     float target_max_temp = center_temp + half_span;
+
+    (void)high_motion_frame;
 
     if (s_display_window_valid == 0U)
     {
@@ -169,10 +80,6 @@ static void redpic1_thermal_visual_get_display_window(float raw_min_temp,
         float ema_max_temp = 0.0f;
         float cur_center = 0.0f;
         float cur_half_span = 0.0f;
-
-        redpic1_thermal_visual_get_display_window_response(high_motion_frame,
-                                                           &ema_alpha,
-                                                           &max_step_c);
 
         ema_min_temp = s_display_min_temp + ((target_min_temp - s_display_min_temp) * ema_alpha);
         ema_max_temp = s_display_max_temp + ((target_max_temp - s_display_max_temp) * ema_alpha);
@@ -200,11 +107,6 @@ static void redpic1_thermal_visual_get_display_window(float raw_min_temp,
 
     *out_display_min_temp = s_display_min_temp;
     *out_display_max_temp = s_display_max_temp;
-#else
-    (void)high_motion_frame;
-    *out_display_min_temp = raw_min_temp;
-    *out_display_max_temp = raw_max_temp;
-#endif
 }
 
 static void redpic1_thermal_visual_reset_filter_state(void)
@@ -214,7 +116,6 @@ static void redpic1_thermal_visual_reset_filter_state(void)
 
 static void redpic1_thermal_visual_adopt_raw_history(const float *raw_frame_data)
 {
-#if THERMAL_VISUAL_FILTER_PATH_ENABLED
     uint16_t i = 0U;
 
     if (raw_frame_data == 0)
@@ -228,9 +129,6 @@ static void redpic1_thermal_visual_adopt_raw_history(const float *raw_frame_data
         s_previous_filtered_temp_frame[i] = raw_frame_data[i];
     }
     s_filter_history_valid = 1U;
-#else
-    (void)raw_frame_data;
-#endif
 }
 
 static const float *redpic1_thermal_visual_get_visual_frame(const float *raw_frame_data,
@@ -248,69 +146,12 @@ static const float *redpic1_thermal_visual_get_visual_frame(const float *raw_fra
         return 0;
     }
 
-#if THERMAL_VISUAL_FILTER_PATH_ENABLED
     if (s_filter_history_valid == 0U)
     {
         redpic1_thermal_visual_adopt_raw_history(raw_frame_data);
         return s_current_visual_temp_frame;
     }
 
-#if THERMAL_VISUAL_STAGEP5_ACTIVE
-    {
-        float max_abs_delta = 0.0f;
-        uint16_t hot_pixel_count = 0U;
-
-        for (i = 0U; i < THERMAL_VISUAL_PIXEL_COUNT; ++i)
-        {
-            float raw_temp = raw_frame_data[i];
-            float prev_temp = s_previous_filtered_temp_frame[i];
-            float delta = raw_temp - prev_temp;
-            float abs_delta = delta;
-            float current_weight = 1.0f;
-            float filtered_temp = 0.0f;
-
-            if (abs_delta < 0.0f)
-            {
-                abs_delta = -abs_delta;
-            }
-
-            if (abs_delta > max_abs_delta)
-            {
-                max_abs_delta = abs_delta;
-            }
-
-            if (abs_delta >= THERMAL_VISUAL_STAGE6L_2_MOTION_HOT_DELTA_C)
-            {
-                hot_pixel_count++;
-            }
-
-            if (abs_delta <= 0.20f)
-            {
-                current_weight = 0.40f;
-            }
-            else if (abs_delta < 1.00f)
-            {
-                current_weight = 0.40f + (((abs_delta - 0.20f) / 0.80f) * 0.60f);
-            }
-
-            filtered_temp = prev_temp + ((raw_temp - prev_temp) * current_weight);
-            s_current_visual_temp_frame[i] = filtered_temp;
-            s_previous_filtered_temp_frame[i] = filtered_temp;
-        }
-
-        if (max_abs_delta >= THERMAL_VISUAL_STAGE6L_2_MOTION_MAX_DELTA_C ||
-            hot_pixel_count >= THERMAL_VISUAL_STAGE6L_2_MOTION_HOT_PIXELS)
-        {
-            if (out_high_motion_frame != 0)
-            {
-                *out_high_motion_frame = 1U;
-            }
-
-            redpic1_thermal_visual_adopt_raw_history(raw_frame_data);
-            return raw_frame_data;
-        }
-    }
-#else
     for (i = 0U; i < THERMAL_VISUAL_PIXEL_COUNT; ++i)
     {
         float raw_temp = raw_frame_data[i];
@@ -338,12 +179,8 @@ static const float *redpic1_thermal_visual_get_visual_frame(const float *raw_fra
         s_current_visual_temp_frame[i] = filtered_temp;
         s_previous_filtered_temp_frame[i] = filtered_temp;
     }
-#endif
 
     return s_current_visual_temp_frame;
-#else
-    return raw_frame_data;
-#endif
 }
 
 static uint8_t redpic1_thermal_visual_temp_in_range(float temp)
@@ -367,15 +204,7 @@ static uint8_t redpic1_thermal_visual_temp_in_range(float temp)
 
 void redpic1_thermal_visual_init(const redpic1_thermal_visual_ops_t *ops)
 {
-#if THERMAL_VISUAL_STAGEP6_ACTIVE
-    s_ops.get_active_period_ms = 0;
-    if (ops != 0)
-    {
-        s_ops = *ops;
-    }
-#else
     (void)ops;
-#endif
 
     redpic1_thermal_visual_reset_history();
 }
@@ -384,42 +213,22 @@ void redpic1_thermal_visual_reset_history(void)
 {
     redpic1_thermal_visual_reset_display_window_state();
     redpic1_thermal_visual_reset_filter_state();
-#if THERMAL_VISUAL_STAGEP6_ACTIVE
-    s_last_capture_tick_ms = 0U;
-#endif
 }
 
 void redpic1_thermal_visual_invalidate_history(void)
 {
-#if THERMAL_VISUAL_STAGEP6_ACTIVE
-    redpic1_thermal_visual_reset_history();
-#endif
+    /* Capture-gap invalidation was part of the discarded P6 branch. */
 }
 
 uint8_t redpic1_thermal_visual_capture_gap_exceeded(uint32_t capture_tick_ms)
 {
-#if THERMAL_VISUAL_STAGEP6_ACTIVE
-    uint32_t active_period_ms = redpic1_thermal_visual_get_active_period_ms();
-
-    if (s_last_capture_tick_ms == 0U || active_period_ms == 0U)
-    {
-        return 0U;
-    }
-
-    return ((capture_tick_ms - s_last_capture_tick_ms) > (active_period_ms * 2U)) ? 1U : 0U;
-#else
     (void)capture_tick_ms;
     return 0U;
-#endif
 }
 
 void redpic1_thermal_visual_note_capture_success(uint32_t capture_tick_ms)
 {
-#if THERMAL_VISUAL_STAGEP6_ACTIVE
-    s_last_capture_tick_ms = capture_tick_ms;
-#else
     (void)capture_tick_ms;
-#endif
 }
 
 const float *redpic1_thermal_visual_get_gray_source_frame(const float *raw_frame_data,
@@ -482,27 +291,11 @@ void redpic1_thermal_visual_prepare_gray_frame(const float *raw_frame_data,
         return;
     }
 
-#if THERMAL_VISUAL_STAGEP7_ACTIVE
     redpic1_thermal_visual_get_display_window(raw_min_temp,
                                               raw_max_temp,
                                               high_motion_frame,
                                               &display_min_temp,
                                               &display_max_temp);
-#else
-    if (high_motion_frame != 0U)
-    {
-        display_min_temp = raw_min_temp;
-        display_max_temp = raw_max_temp;
-    }
-    else
-    {
-        redpic1_thermal_visual_get_display_window(raw_min_temp,
-                                                  raw_max_temp,
-                                                  0U,
-                                                  &display_min_temp,
-                                                  &display_max_temp);
-    }
-#endif
 
     if (display_max_temp <= display_min_temp)
     {

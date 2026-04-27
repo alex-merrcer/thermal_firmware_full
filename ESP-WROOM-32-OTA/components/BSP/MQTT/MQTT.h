@@ -23,6 +23,7 @@
 #define ALIYUN_THERMAL_PROP_MIN_TEMP     APP_THERMAL_PROP_MIN_TEMP
 #define ALIYUN_THERMAL_PROP_MAX_TEMP     APP_THERMAL_PROP_MAX_TEMP
 #define ALIYUN_THERMAL_PROP_CENTER_TEMP  APP_THERMAL_PROP_CENTER_TEMP
+#define ALIYUN_OTA_PROP_STATE            APP_OTA_PROP_STATE
 
 #define MQTT_TAG "ALIYUN_MQTT"
 
@@ -39,6 +40,11 @@ void mqtt_service_step(void);
 esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
                                                    int16_t max_temp_x10,
                                                    int16_t center_temp_x10);
+esp_err_t mqtt_service_submit_ota_status(uint8_t stage,
+                                         uint8_t percent,
+                                         uint16_t detail_code,
+                                         uint32_t current_value,
+                                         uint32_t total_value);
 
 void mqtt_app_init(void);
 void mqtt_app_init_1(void);

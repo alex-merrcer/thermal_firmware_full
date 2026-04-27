@@ -4,6 +4,7 @@
     "pages/history/index",
     "pages/device/index",
     "pages/settings/index",
+    "pages/ble-provision/index",
     "pages/debug/index"
   ],
   "window": {

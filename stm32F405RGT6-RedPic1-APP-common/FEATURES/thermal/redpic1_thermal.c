@@ -22,48 +22,6 @@
 #include "thermal_pair.h"
 #include "thermal_visual.h"
 
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U)
-    #define REDPIC1_THERMAL_STAGE6R_1_ACTIVE 1U
-#else
-    #define REDPIC1_THERMAL_STAGE6R_1_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_2_ENABLE != 0U)
-    #define REDPIC1_THERMAL_STAGE6R_2_ACTIVE 1U
-#else
-    #define REDPIC1_THERMAL_STAGE6R_2_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGE6R_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_2_ENABLE != 0U) && \
-    (REDPIC1_THERMAL_STAGE6R_3_ENABLE != 0U)
-    #define REDPIC1_THERMAL_STAGE6R_3_ACTIVE 1U
-#else
-    #define REDPIC1_THERMAL_STAGE6R_3_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ENABLE != 0U)
-    #define REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE 1U
-#else
-    #define REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ENABLE != 0U)
-    #define REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE 1U
-#else
-    #define REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE 0U
-#endif
-
-#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ACTIVE != 0U) && \
-    (REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ENABLE != 0U)
-    #define REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ACTIVE 1U
-#else
-    #define REDPIC1_THERMAL_STAGEV4_C1_PAIR_GRACE_ACTIVE 0U
-#endif
-
 /**
  * @file redpic1_thermal.c
  * @brief 热成像采集、灰度生成与异步显示提交模块。
@@ -83,11 +41,7 @@
 /*  宏定义与常量配置 (Constants & Configuration)                             */
 /* ========================================================================= */
 /* 基础参数 */
-#if (REDPIC1_THERMAL_32HZ_AB_TEST_ENABLE != 0U)
-    #define REDPIC1_THERMAL_ACTIVE_REFRESH_RATE        FPS32HZ
-#else
-    #define REDPIC1_THERMAL_ACTIVE_REFRESH_RATE        RefreshRate
-#endif
+#define REDPIC1_THERMAL_ACTIVE_REFRESH_RATE        RefreshRate
 #define REDPIC1_THERMAL_IDLE_REFRESH_RATE              FPS1HZ       ///< 休眠/低功耗模式帧率
 #define REDPIC1_THERMAL_SRC_ROWS                       24U          ///< MLX90640 原始分辨率行数
 #define REDPIC1_THERMAL_SRC_COLS                       32U          ///< MLX90640 原始分辨率列数
@@ -319,11 +273,7 @@ static void redpic1_thermal_clear_bottom_bar(void)
 static void redpic1_thermal_mark_bottom_bar_dirty(uint8_t reason_mask)
 {
     s_overlay_bar_pending_dirty = 1U;
-#if (REDPIC1_THERMAL_OVERLAY_DIRTY_ONLY_ACTIVE != 0U)
     s_overlay_bar_dirty_reason_mask = (uint8_t)(s_overlay_bar_dirty_reason_mask | reason_mask);
-#else
-    (void)reason_mask;
-#endif
 }
 
 static void redpic1_thermal_clear_bottom_bar_dirty(void)
@@ -655,7 +605,6 @@ void redpic1_thermal_step(void)
             return;
         }
 
-#if (REDPIC1_THERMAL_STAGEV4_C1_FULL_SUBPAGE_PAIR_ENABLE != 0U)
         if (redpic1_thermal_pair_try_compose(back_slot->temp_frame,
                                              captured_subpage,
                                              capture_tick_ms,
@@ -667,7 +616,6 @@ void redpic1_thermal_step(void)
             app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
             return;
         }
-#endif
 
         if (redpic1_thermal_visual_frame_data_is_valid(back_slot->temp_frame) == 0U)
         {

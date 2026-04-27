@@ -9,12 +9,6 @@
 #define THERMAL_FRAME_SLOT_TOKEN_SHIFT      8U
 #define THERMAL_FRAME_SLOT_TOKEN_SLOT_MASK  0xFFU
 
-#if (REDPIC1_THERMAL_DROP_EXPIRED_FRAME_ENABLE != 0U)
-    #define THERMAL_FRAME_SLOT_DROP_EXPIRED_ACTIVE 1U
-#else
-    #define THERMAL_FRAME_SLOT_DROP_EXPIRED_ACTIVE 0U
-#endif
-
 static redpic1_thermal_frame_slot_ops_t s_ops;
 static redpic1_thermal_frame_slot_t s_frame_slots[REDPIC1_THERMAL_FRAME_SLOT_COUNT];
 static uint32_t s_frame_sequence = 0U;
@@ -271,13 +265,11 @@ static uint8_t redpic1_thermal_frame_slot_try_claim_present(uintptr_t token, uin
         s_frame_slots[slot_index].slot_state == REDPIC1_THERMAL_FRAME_SLOT_READY &&
         s_frame_slots[slot_index].frame_seq == frame_seq)
     {
-#if (THERMAL_FRAME_SLOT_DROP_EXPIRED_ACTIVE != 0U)
         if (redpic1_thermal_frame_slot_ready_frame_expired_locked(slot_index, now_ms) != 0U)
         {
             expired = 1U;
         }
         else
-#endif
         {
             s_frame_slots[slot_index].slot_state = REDPIC1_THERMAL_FRAME_SLOT_INFLIGHT;
             s_ready_slot_index = REDPIC1_THERMAL_FRAME_SLOT_INDEX_NONE;

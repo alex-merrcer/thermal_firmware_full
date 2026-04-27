@@ -1,11 +1,28 @@
-.settings-page {
+.ble-page {
   display: flex;
   flex-direction: column;
   gap: 22rpx;
 }
 
-.setting-row,
-.placeholder-item {
+.status-row {
+  margin-top: 24rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.mini-actions {
+  flex-shrink: 0;
+}
+
+.compact-button {
+  min-width: 180rpx;
+  height: 72rpx;
+  font-size: 24rpx;
+}
+
+.device-item {
   display: flex;
   justify-content: space-between;
   gap: 20rpx;
@@ -14,8 +31,7 @@
   border-top: 1rpx solid rgba(36, 27, 21, 0.08);
 }
 
-.setting-row:first-of-type,
-.placeholder-item:first-of-type {
+.device-item:first-of-type {
   margin-top: 12rpx;
 }
 
@@ -42,10 +58,6 @@
   color: #5c4434;
 }
 
-.ble-entry {
-  cursor: pointer;
-}
-
 .input-label {
   margin-top: 24rpx;
   font-size: 24rpx;
@@ -62,43 +74,22 @@
   color: #241b15;
 }
 
-.button-row {
-  margin-top: 20rpx;
+.button-grid {
+  margin-top: 22rpx;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16rpx;
 }
 
-.device-summary {
-  margin-top: 22rpx;
-  display: flex;
-  justify-content: space-between;
-  gap: 18rpx;
-  align-items: center;
-  padding: 24rpx;
-  border-radius: 24rpx;
-  background: rgba(248, 243, 236, 0.92);
-}
-
-.device-name {
-  font-size: 34rpx;
-  font-weight: 700;
-  color: #241b15;
-}
-
-.device-status {
-  margin-top: 10rpx;
-  font-size: 22rpx;
-  color: #8b7d70;
-}
-
-.version-card {
-  text-align: center;
-}
-
-.version-hint {
-  margin-top: 18rpx;
-  font-size: 24rpx;
+.log-item {
+  padding: 18rpx 0;
+  border-top: 1rpx solid rgba(36, 27, 21, 0.08);
+  font-size: 23rpx;
   line-height: 1.6;
-  color: #7b6b5e;
+  color: #624736;
+  word-break: break-all;
+}
+
+.log-item:first-of-type {
+  margin-top: 12rpx;
 }

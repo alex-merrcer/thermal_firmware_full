@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../../../../protocol/ota_ctrl_protocol.h"
 #include "WIFI.h"
 #include "app_service_bus.h"
 #include "cJSON.h"
@@ -23,6 +24,16 @@ typedef struct
     int16_t max_temp_x10;
     int16_t center_temp_x10;
 } mqtt_thermal_snapshot_t;
+
+typedef struct
+{
+    uint8_t stage;
+    uint8_t percent;
+    uint16_t detail_code;
+    uint32_t current_value;
+    uint32_t total_value;
+    uint8_t valid;
+} mqtt_ota_status_t;
 
 #define MQTT_THERMAL_QUEUE_LENGTH 8U
 
@@ -43,6 +54,7 @@ static mqtt_thermal_snapshot_t s_pending_snapshots[MQTT_THERMAL_QUEUE_LENGTH];
 static size_t s_pending_snapshot_head = 0U;
 static size_t s_pending_snapshot_tail = 0U;
 static size_t s_pending_snapshot_count = 0U;
+static mqtt_ota_status_t s_pending_ota_status = {0};
 
 static char s_mqtt_host[128];
 static char s_mqtt_client_id[192];
@@ -52,12 +64,15 @@ static char s_topic_property_post[160];
 static char s_topic_property_post_reply[160];
 static char s_topic_property_set[160];
 
+static esp_err_t mqtt_service_publish_json(const char *topic, const char *payload);
+
 static void mqtt_service_pending_snapshot_reset(void)
 {
     memset(s_pending_snapshots, 0, sizeof(s_pending_snapshots));
     s_pending_snapshot_head = 0U;
     s_pending_snapshot_tail = 0U;
     s_pending_snapshot_count = 0U;
+    memset(&s_pending_ota_status, 0, sizeof(s_pending_ota_status));
 }
 
 static bool mqtt_service_pending_snapshot_is_empty(void)
@@ -417,6 +432,162 @@ static void mqtt_service_add_property(cJSON *params,
     cJSON_AddItemToObject(params, identifier, property);
 }
 
+static void mqtt_service_add_property_string(cJSON *params,
+                                             const char *identifier,
+                                             const char *value)
+{
+    cJSON *property = NULL;
+
+    if (params == NULL || identifier == NULL || value == NULL)
+    {
+        return;
+    }
+
+    property = cJSON_CreateObject();
+    if (property == NULL)
+    {
+        return;
+    }
+
+    cJSON_AddStringToObject(property, "value", value);
+    cJSON_AddItemToObject(params, identifier, property);
+}
+
+static const char *mqtt_service_ota_stage_text(uint8_t stage)
+{
+    switch (stage)
+    {
+    case OTA_CTRL_STAGE_IDLE:
+        return "idle";
+    case OTA_CTRL_STAGE_QUERY:
+        return "query";
+    case OTA_CTRL_STAGE_DOWNLOAD:
+        return "download";
+    case OTA_CTRL_STAGE_VERIFY_SIG:
+        return "verify_sig";
+    case OTA_CTRL_STAGE_VERIFY_CRC:
+        return "verify_crc";
+    case OTA_CTRL_STAGE_AES_PREPARE:
+        return "aes_prepare";
+    case OTA_CTRL_STAGE_READY:
+        return "ready";
+    case OTA_CTRL_STAGE_TRANSFER:
+        return "transfer";
+    case OTA_CTRL_STAGE_DONE:
+        return "done";
+    default:
+        return "unknown";
+    }
+}
+
+static esp_err_t mqtt_service_publish_pending_ota_status(void)
+{
+    cJSON *root = NULL;
+    cJSON *params = NULL;
+    cJSON *sys = NULL;
+    char *json_str = NULL;
+    char id_buffer[16];
+    char ota_state_text[128];
+    int text_len = 0;
+    esp_err_t err = ESP_OK;
+
+    if (s_pending_ota_status.valid == 0U)
+    {
+        return ESP_OK;
+    }
+
+    if (mqtt_connected == false || client == NULL)
+    {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (s_pending_ota_status.percent == OTA_CTRL_PERCENT_UNKNOWN)
+    {
+        text_len = snprintf(ota_state_text,
+                            sizeof(ota_state_text),
+                            "%s|detail=%u|current=%" PRIu32 "|total=%" PRIu32,
+                            mqtt_service_ota_stage_text(s_pending_ota_status.stage),
+                            (unsigned)s_pending_ota_status.detail_code,
+                            s_pending_ota_status.current_value,
+                            s_pending_ota_status.total_value);
+    }
+    else
+    {
+        text_len = snprintf(ota_state_text,
+                            sizeof(ota_state_text),
+                            "%s|percent=%u|detail=%u|current=%" PRIu32 "|total=%" PRIu32,
+                            mqtt_service_ota_stage_text(s_pending_ota_status.stage),
+                            (unsigned)s_pending_ota_status.percent,
+                            (unsigned)s_pending_ota_status.detail_code,
+                            s_pending_ota_status.current_value,
+                            s_pending_ota_status.total_value);
+    }
+
+    if (text_len <= 0 || (size_t)text_len >= sizeof(ota_state_text))
+    {
+        ESP_LOGE(MQTT_TAG, "OtaState text buffer is too small");
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    root = cJSON_CreateObject();
+    params = cJSON_CreateObject();
+    sys = cJSON_CreateObject();
+    if (root == NULL || params == NULL || sys == NULL)
+    {
+        ESP_LOGE(MQTT_TAG, "cJSON allocation failed while building OTA status");
+        err = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
+    snprintf(id_buffer, sizeof(id_buffer), "%" PRIu32, s_publish_seq++);
+    cJSON_AddStringToObject(root, "id", id_buffer);
+    cJSON_AddStringToObject(root, "version", "1.0");
+    cJSON_AddNumberToObject(sys, "ack", 1);
+    cJSON_AddItemToObject(root, "sys", sys);
+    cJSON_AddItemToObject(root, "params", params);
+    cJSON_AddStringToObject(root, "method", "thing.event.property.post");
+
+    mqtt_service_add_property_string(params, ALIYUN_OTA_PROP_STATE, ota_state_text);
+
+    json_str = cJSON_PrintUnformatted(root);
+    if (json_str == NULL)
+    {
+        ESP_LOGE(MQTT_TAG, "cJSON_PrintUnformatted failed while building OTA status");
+        err = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
+    ESP_LOGI(MQTT_TAG, "OTA cloud post %s", ota_state_text);
+    err = mqtt_service_publish_json(s_topic_property_post, json_str);
+    if (err == ESP_OK)
+    {
+        s_pending_ota_status.valid = 0U;
+    }
+
+cleanup:
+    if (json_str != NULL)
+    {
+        free(json_str);
+    }
+    if (root != NULL)
+    {
+        cJSON_Delete(root);
+    }
+    else
+    {
+        if (params != NULL)
+        {
+            cJSON_Delete(params);
+        }
+        if (sys != NULL)
+        {
+            cJSON_Delete(sys);
+        }
+    }
+
+    return err;
+}
+
 static esp_err_t mqtt_service_publish_pending_snapshot(void)
 {
     const mqtt_thermal_snapshot_t *snapshot = NULL;
@@ -532,6 +703,7 @@ static void mqtt_event_handler(void *args, esp_event_base_t base, int32_t event_
         msg_id = esp_mqtt_client_subscribe(client, s_topic_property_post_reply, ALIYUN_MQTT_QOS);
         ESP_LOGI(MQTT_TAG, "Subscribe property/post_reply, msg_id=%d", msg_id);
         (void)mqtt_service_publish_pending_snapshot();
+        (void)mqtt_service_publish_pending_ota_status();
         break;
 
     case MQTT_EVENT_DISCONNECTED:
@@ -732,6 +904,11 @@ void mqtt_service_step(void)
     {
         (void)mqtt_service_publish_pending_snapshot();
     }
+
+    if (mqtt_connected != false && s_pending_ota_status.valid != 0U)
+    {
+        (void)mqtt_service_publish_pending_ota_status();
+    }
 }
 
 esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
@@ -775,6 +952,60 @@ esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
             ESP_LOGE(MQTT_TAG, "wifi_service_set_enabled(1) failed: 0x%04X", (unsigned int)err);
             return err;
         }
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t mqtt_service_submit_ota_status(uint8_t stage,
+                                         uint8_t percent,
+                                         uint16_t detail_code,
+                                         uint32_t current_value,
+                                         uint32_t total_value)
+{
+    esp_err_t err = ESP_OK;
+
+    if (s_service_inited == 0U)
+    {
+        err = mqtt_service_init();
+        if (err != ESP_OK)
+        {
+            return err;
+        }
+    }
+
+    if (mqtt_service_is_configured() == 0U)
+    {
+        mqtt_service_log_missing_config_once();
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    s_pending_ota_status.stage = stage;
+    s_pending_ota_status.percent = percent;
+    s_pending_ota_status.detail_code = detail_code;
+    s_pending_ota_status.current_value = current_value;
+    s_pending_ota_status.total_value = total_value;
+    s_pending_ota_status.valid = 1U;
+
+    if (wifi_service_is_enabled() == 0U)
+    {
+        if (wifi_service_has_credentials() == 0U)
+        {
+            ESP_LOGE(MQTT_TAG, "WiFi credentials are empty, cannot publish OTA status");
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        err = wifi_service_set_enabled(1U);
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(MQTT_TAG, "wifi_service_set_enabled(1) failed for OTA status: 0x%04X", (unsigned int)err);
+            return err;
+        }
+    }
+
+    if (mqtt_connected != false && client != NULL)
+    {
+        (void)mqtt_service_publish_pending_ota_status();
     }
 
     return ESP_OK;
