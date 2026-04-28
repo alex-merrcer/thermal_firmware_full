@@ -361,6 +361,10 @@ static uint32_t host_ctrl_status_bits(void)
     {
         bits |= OTA_HOST_STATUS_MQTT_ENABLED;
     }
+    if (mqtt_connected != false)
+    {
+        bits |= OTA_HOST_STATUS_MQTT_CONNECTED;
+    }
     if (s_debug_screen_requested != 0U)
     {
         bits |= OTA_HOST_STATUS_DEBUG_SCREEN_ENABLED;

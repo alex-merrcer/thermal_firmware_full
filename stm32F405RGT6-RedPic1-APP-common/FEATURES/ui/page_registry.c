@@ -173,7 +173,6 @@ static uint8_t page_set_debug_screen_enabled(uint8_t enabled);
 static uint8_t page_set_remote_keys_enabled(uint8_t enabled);
 static uint8_t page_refresh_host_status_async(void);
 static uint8_t page_set_host_state_async(power_state_t state);
-static uint8_t page_set_power_policy_async(power_policy_t policy);
 static uint8_t page_enter_forced_deep_sleep_async(uint32_t timeout_ms);
 static void ota_center_enter_menu_mode(void);
 static void ota_center_enter_confirm_mode(ota_center_mode_t mode);
@@ -197,12 +196,13 @@ static uint32_t page_async_make_deadline(uint32_t timeout_ms);
 static uint8_t page_async_deadline_expired(uint32_t now_ms, uint32_t deadline_ms);
 static void ota_center_draw_info_rows(void);
 static void home_draw_item(uint8_t index);
+static void page_format_ble_status(char *buffer, uint16_t buffer_len);
+static void page_format_cloud_status(char *buffer, uint16_t buffer_len);
 static void wifi_draw_status_row(uint8_t force_refresh);
 static void wifi_draw_item(uint8_t force_refresh);
 static void connectivity_draw_item(uint8_t index);
 static void power_draw_info_rows(void);
 static void power_draw_battery_status(void);
-static void power_draw_policy_status(void);
 static void power_draw_item(uint8_t index);
 static void engineering_draw_item(uint8_t index);
 static uint8_t perf_baseline_debug_visible(void);
@@ -240,9 +240,14 @@ static uint8_t s_engineering_selected = 0U;
 static uint8_t s_perf_baseline_subpage = 0U;
 static uint32_t s_perf_baseline_next_refresh_ms = 0U;
 static uint32_t s_wifi_next_refresh_ms = 0U;
-static char s_wifi_status_cache[24];
-static uint16_t s_wifi_status_color_cache = 0U;
-static uint8_t s_wifi_status_cache_valid = 0U;
+static char s_connectivity_status_cache[3][24];
+static uint16_t s_connectivity_status_color_cache[3];
+static uint8_t s_connectivity_status_cache_valid[3];
+static char s_connectivity_item_label_cache[3][24];
+static uint8_t s_connectivity_item_enabled_cache[3];
+static uint8_t s_connectivity_item_selected_cache[3];
+static uint8_t s_connectivity_item_pending_cache[3];
+static uint8_t s_connectivity_item_cache_valid[3];
 static ota_center_mode_t s_ota_mode = OTA_CENTER_MODE_MENU;
 static ota_pending_action_t s_ota_pending_action = OTA_PENDING_NONE;
 static uint8_t s_ota_selected = 0U;
@@ -296,7 +301,6 @@ static const char * const s_engineering_items[] =
 /* 鐢垫簮椤甸潰鑿滃崟鏂囨湰銆?*/
 static const char * const s_power_items[] =
 {
-    "Power Mode",
     "Screen Off",
     "Standby",
     "ESP Save"
@@ -316,7 +320,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
 
 #define HOME_ITEM_COUNT            5U
 #define OTA_ITEM_COUNT             4U
-#define POWER_ITEM_COUNT           4U
+#define POWER_ITEM_COUNT           3U
 #if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
     #define SYSTEM_ITEM_THERMAL_PAUSE_SEND 0U
     #define SYSTEM_ITEM_DEBUG_MODE         1U
@@ -347,11 +351,10 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_INFO_ROW2_Y           96U
 #define PAGE_INFO_ROW3_Y           120U
 #define PAGE_INFO_ROW4_Y           144U
-#define WIFI_STATUS_Y              PAGE_INFO_ROW1_Y
-#define WIFI_LIST_START_Y          104U
+#define WIFI_LIST_START_Y          152U
 #define WIFI_ITEM_COUNT            3U
 #define OTA_LIST_START_Y           104U
-#define POWER_LIST_START_Y         146U
+#define POWER_LIST_START_Y         104U
 #define SYSTEM_LIST_START_Y        88U
 #define DEBUG_LIST_START_Y         88U
 
@@ -423,6 +426,76 @@ static void page_format_wifi_status(char *buffer, uint16_t buffer_len)
     }
 
     snprintf(buffer, buffer_len, "%s", "NOT CONNECTED");
+}
+
+static void page_format_ble_status(char *buffer, uint16_t buffer_len)
+{
+    esp_host_status_t status;
+    device_settings_t settings;
+
+    esp_host_get_status_copy(&status);
+    app_rtos_settings_copy(&settings);
+
+    if (s_async_state.ble_set_pending != 0U)
+    {
+        snprintf(buffer,
+                 buffer_len,
+                 "%s",
+                 (s_async_state.ble_target_enabled != 0U) ? "CONNECTING" : "OFF");
+        return;
+    }
+
+    if (settings.ble_enabled == 0U)
+    {
+        snprintf(buffer, buffer_len, "%s", "OFF");
+        return;
+    }
+
+    if (status.online == 0U)
+    {
+        snprintf(buffer, buffer_len, "%s", "NOT CONNECTED");
+        return;
+    }
+
+    snprintf(buffer,
+             buffer_len,
+             "%s",
+             (status.ble_connected != 0U) ? "CONNECTED" : "NOT CONNECTED");
+}
+
+static void page_format_cloud_status(char *buffer, uint16_t buffer_len)
+{
+    esp_host_status_t status;
+    device_settings_t settings;
+
+    esp_host_get_status_copy(&status);
+    app_rtos_settings_copy(&settings);
+
+    if (s_async_state.mqtt_set_pending != 0U)
+    {
+        snprintf(buffer,
+                 buffer_len,
+                 "%s",
+                 (s_async_state.mqtt_target_enabled != 0U) ? "CONNECTING" : "OFF");
+        return;
+    }
+
+    if (settings.mqtt_enabled == 0U)
+    {
+        snprintf(buffer, buffer_len, "%s", "OFF");
+        return;
+    }
+
+    if (status.online == 0U || status.wifi_connected == 0U)
+    {
+        snprintf(buffer, buffer_len, "%s", "NOT CONNECTED");
+        return;
+    }
+
+    snprintf(buffer,
+             buffer_len,
+             "%s",
+             (status.mqtt_connected != 0U) ? "CONNECTED" : "CONNECTING");
 }
 
 /* 杩斿洖褰撳墠璇曡繍琛岀姸鎬佺殑绠€鐭枃妗堛€?*/
@@ -1193,7 +1266,7 @@ static void page_refresh_host_status_views(ui_page_id_t active_page)
     }
     else if (active_page == UI_PAGE_POWER)
     {
-        power_draw_item(3U);
+        power_draw_item(2U);
     }
 }
 
@@ -1461,7 +1534,7 @@ static void page_refresh_timeout_views(ui_page_id_t active_page)
     }
     else if (active_page == UI_PAGE_POWER)
     {
-        power_draw_item(3U);
+        power_draw_item(2U);
     }
 }
 
@@ -1706,39 +1779,69 @@ static void home_draw_item(uint8_t index)
 /* 缁樺埗 WiFi 鐘舵€佽锛屽苟鍒╃敤缂撳瓨閬垮厤閲嶅閲嶇粯銆?*/
 static void wifi_draw_status_row(uint8_t force_refresh)
 {
+    static const char * const s_status_labels[3] =
+    {
+        "WiFi Connection",
+        "Bluetooth Connection",
+        "Cloud Connection"
+    };
     char value_buffer[24];
     uint16_t value_color = BLACK;
+    uint8_t row_index = 0U;
 
-    page_format_wifi_status(value_buffer, sizeof(value_buffer));
-    if (strcmp(value_buffer, "CONNECTED") == 0)
+    for (row_index = 0U; row_index < 3U; ++row_index)
     {
-        value_color = GREEN;
-    }
-    else if (strcmp(value_buffer, "NOT CONNECTED") == 0)
-    {
-        value_color = RED;
-    }
-    else if (strcmp(value_buffer, "OFFLINE") == 0)
-    {
-        value_color = RED;
-    }
-    else if (strcmp(value_buffer, "OFF") == 0)
-    {
-        value_color = RED;
-    }
+        if (row_index == 0U)
+        {
+            page_format_wifi_status(value_buffer, sizeof(value_buffer));
+        }
+        else if (row_index == 1U)
+        {
+            page_format_ble_status(value_buffer, sizeof(value_buffer));
+        }
+        else
+        {
+            page_format_cloud_status(value_buffer, sizeof(value_buffer));
+        }
 
-    if (force_refresh == 0U &&
-        s_wifi_status_cache_valid != 0U &&
-        s_wifi_status_color_cache == value_color &&
-        strcmp(s_wifi_status_cache, value_buffer) == 0)
-    {
-        return;
-    }
+        value_color = BLACK;
+        if (strcmp(value_buffer, "CONNECTED") == 0)
+        {
+            value_color = GREEN;
+        }
+        else if (strcmp(value_buffer, "CONNECTING") == 0 ||
+                 strcmp(value_buffer, "WAIT") == 0 ||
+                 strcmp(value_buffer, "WORKING") == 0)
+        {
+            value_color = YELLOW;
+        }
+        else if (strcmp(value_buffer, "NOT CONNECTED") == 0 ||
+                 strcmp(value_buffer, "OFFLINE") == 0 ||
+                 strcmp(value_buffer, "OFF") == 0)
+        {
+            value_color = RED;
+        }
 
-    ui_renderer_draw_value_row(WIFI_STATUS_Y, "Connection", value_buffer, value_color, WHITE);
-    snprintf(s_wifi_status_cache, sizeof(s_wifi_status_cache), "%s", value_buffer);
-    s_wifi_status_color_cache = value_color;
-    s_wifi_status_cache_valid = 1U;
+        if (force_refresh == 0U &&
+            s_connectivity_status_cache_valid[row_index] != 0U &&
+            s_connectivity_status_color_cache[row_index] == value_color &&
+            strcmp(s_connectivity_status_cache[row_index], value_buffer) == 0)
+        {
+            continue;
+        }
+
+        ui_renderer_draw_value_row((uint16_t)(PAGE_INFO_ROW1_Y + ((uint16_t)row_index * 24U)),
+                                   s_status_labels[row_index],
+                                   value_buffer,
+                                   value_color,
+                                   WHITE);
+        snprintf(s_connectivity_status_cache[row_index],
+                 sizeof(s_connectivity_status_cache[row_index]),
+                 "%s",
+                 value_buffer);
+        s_connectivity_status_color_cache[row_index] = value_color;
+        s_connectivity_status_cache_valid[row_index] = 1U;
+    }
 }
 
 /* 缁樺埗 WiFi 寮€鍏抽」锛屽苟鍒╃敤缂撳瓨閬垮厤閲嶅閲嶇粯銆?*/
@@ -1746,56 +1849,75 @@ static void wifi_draw_item(uint8_t force_refresh)
 {
     uint8_t index = 0U;
 
-    (void)force_refresh;
     for (index = 0U; index < WIFI_ITEM_COUNT; ++index)
     {
-        connectivity_draw_item(index);
+        device_settings_t settings;
+        const char *label = "WiFi";
+        uint8_t selected = (s_wifi_selected == index) ? 1U : 0U;
+        uint8_t enabled = 0U;
+        uint8_t pending = 0U;
+
+        app_rtos_settings_copy(&settings);
+
+        if (index == 0U)
+        {
+            label = (esp_host_is_forced_deep_sleep() != 0U) ? "WiFi(KEY6)" :
+                    ((s_async_state.wifi_set_pending != 0U) ? "WiFi..." : "WiFi");
+            enabled = (s_async_state.wifi_set_pending != 0U) ? s_async_state.wifi_target_enabled : settings.wifi_enabled;
+            pending = s_async_state.wifi_set_pending;
+        }
+        else if (index == 1U)
+        {
+            label = (s_async_state.ble_set_pending != 0U) ? "Bluetooth..." : "Bluetooth";
+            enabled = (s_async_state.ble_set_pending != 0U) ? s_async_state.ble_target_enabled : settings.ble_enabled;
+            pending = s_async_state.ble_set_pending;
+        }
+        else
+        {
+            label = (s_async_state.mqtt_set_pending != 0U) ? "Server..." : "Server";
+            enabled = (s_async_state.mqtt_set_pending != 0U) ? s_async_state.mqtt_target_enabled : settings.mqtt_enabled;
+            pending = s_async_state.mqtt_set_pending;
+        }
+
+        if (force_refresh == 0U &&
+            s_connectivity_item_cache_valid[index] != 0U &&
+            s_connectivity_item_enabled_cache[index] == enabled &&
+            s_connectivity_item_selected_cache[index] == selected &&
+            s_connectivity_item_pending_cache[index] == pending &&
+            strcmp(s_connectivity_item_label_cache[index], label) == 0)
+        {
+            continue;
+        }
+
+        ui_renderer_draw_toggle_item(page_list_item_y(WIFI_LIST_START_Y, index),
+                                     label,
+                                     enabled,
+                                     selected,
+                                     (pending != 0U) ? LGRAY : WHITE);
+        snprintf(s_connectivity_item_label_cache[index],
+                 sizeof(s_connectivity_item_label_cache[index]),
+                 "%s",
+                 label);
+        s_connectivity_item_enabled_cache[index] = enabled;
+        s_connectivity_item_selected_cache[index] = selected;
+        s_connectivity_item_pending_cache[index] = pending;
+        s_connectivity_item_cache_valid[index] = 1U;
     }
 }
 
 static void connectivity_draw_item(uint8_t index)
 {
-    device_settings_t settings;
-    const char *label = "WiFi";
-    uint16_t item_y = page_list_item_y(WIFI_LIST_START_Y, index);
-    uint8_t selected = (s_wifi_selected == index) ? 1U : 0U;
-    uint8_t enabled = 0U;
-    uint8_t pending = 0U;
-
-    app_rtos_settings_copy(&settings);
-
-    if (index == 0U)
+    if (index < WIFI_ITEM_COUNT)
     {
-        label = (esp_host_is_forced_deep_sleep() != 0U) ? "WiFi(KEY6)" :
-                ((s_async_state.wifi_set_pending != 0U) ? "WiFi..." : "WiFi");
-        enabled = (s_async_state.wifi_set_pending != 0U) ? s_async_state.wifi_target_enabled : settings.wifi_enabled;
-        pending = s_async_state.wifi_set_pending;
+        s_connectivity_item_cache_valid[index] = 0U;
     }
-    else if (index == 1U)
-    {
-        label = (s_async_state.ble_set_pending != 0U) ? "Bluetooth..." : "Bluetooth";
-        enabled = (s_async_state.ble_set_pending != 0U) ? s_async_state.ble_target_enabled : settings.ble_enabled;
-        pending = s_async_state.ble_set_pending;
-    }
-    else
-    {
-        label = (s_async_state.mqtt_set_pending != 0U) ? "Server..." : "Server";
-        enabled = (s_async_state.mqtt_set_pending != 0U) ? s_async_state.mqtt_target_enabled : settings.mqtt_enabled;
-        pending = s_async_state.mqtt_set_pending;
-    }
-
-    ui_renderer_draw_toggle_item(item_y,
-                                 label,
-                                 enabled,
-                                 selected,
-                                 (pending != 0U) ? LGRAY : WHITE);
+    wifi_draw_item(0U);
 }
 
 /* 缁樺埗鐢垫簮椤甸潰椤堕儴淇℃伅琛屻€?*/
 static void power_draw_info_rows(void)
 {
     power_draw_battery_status();
-    power_draw_policy_status();
 }
 
 static void power_draw_battery_status(void)
@@ -1822,28 +1944,11 @@ static void power_draw_battery_status(void)
 }
 
 /* 鏍规嵁绱㈠紩缁樺埗鐢垫簮椤甸潰涓殑鍗曚釜鑿滃崟椤广€?*/
-static void power_draw_policy_status(void)
-{
-    device_settings_t settings;
-
-    app_rtos_settings_copy(&settings);
-    ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y,
-                               "Power Mode",
-                               ui_renderer_power_policy_text(settings.power_policy),
-                               DARKBLUE,
-                               WHITE);
-    ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y,
-                               "Clock Policy",
-                               ui_renderer_clock_policy_text(settings.clock_profile_policy),
-                               DARKBLUE,
-                               WHITE);
-}
-
 static void power_draw_item(uint8_t index)
 {
-    char value_buffer[24];
     device_settings_t settings;
     uint16_t item_y = page_list_item_y(POWER_LIST_START_Y, index);
+    const char *value_text = "Off";
 
     app_rtos_settings_copy(&settings);
 
@@ -1854,33 +1959,25 @@ static void power_draw_item(uint8_t index)
 
     if (index == 0U)
     {
+        char value_buffer[24];
+
+        page_format_timeout_ms(value_buffer, sizeof(value_buffer), settings.screen_off_timeout_ms);
         ui_renderer_draw_option_item(item_y,
                                      s_power_items[0],
-                                     ui_renderer_power_policy_text(settings.power_policy),
+                                     value_buffer,
                                      (s_power_selected == 0U) ? 1U : 0U,
                                      WHITE);
     }
     else if (index == 1U)
     {
-        page_format_timeout_ms(value_buffer, sizeof(value_buffer), settings.screen_off_timeout_ms);
-        ui_renderer_draw_option_item(item_y,
+        ui_renderer_draw_toggle_item(item_y,
                                      s_power_items[1],
-                                     value_buffer,
+                                     settings.standby_enabled,
                                      (s_power_selected == 1U) ? 1U : 0U,
                                      WHITE);
     }
     else if (index == 2U)
     {
-        ui_renderer_draw_toggle_item(item_y,
-                                     s_power_items[2],
-                                     settings.standby_enabled,
-                                     (s_power_selected == 2U) ? 1U : 0U,
-                                     WHITE);
-    }
-    else if (index == 3U)
-    {
-        const char *value_text = "Off";
-
         if (s_async_state.forced_deep_sleep_pending != 0U)
         {
             value_text = "WAIT";
@@ -1891,9 +1988,9 @@ static void power_draw_item(uint8_t index)
         }
 
         ui_renderer_draw_option_item(item_y,
-                                     s_power_items[3],
+                                     s_power_items[2],
                                      value_text,
-                                     (s_power_selected == 3U) ? 1U : 0U,
+                                     (s_power_selected == 2U) ? 1U : 0U,
                                      WHITE);
     }
 }
@@ -2369,7 +2466,8 @@ static void connectivity_on_enter(ui_page_id_t previous_page)
     (void)previous_page;
     s_wifi_selected = 0U;
     s_wifi_next_refresh_ms = 0U;
-    s_wifi_status_cache_valid = 0U;
+    memset(s_connectivity_status_cache_valid, 0, sizeof(s_connectivity_status_cache_valid));
+    memset(s_connectivity_item_cache_valid, 0, sizeof(s_connectivity_item_cache_valid));
 
     app_rtos_settings_copy(&settings);
     if (settings.wifi_enabled != 0U ||
@@ -2384,7 +2482,8 @@ static void connectivity_on_enter(ui_page_id_t previous_page)
 static void connectivity_on_leave(ui_page_id_t next_page)
 {
     (void)next_page;
-    s_wifi_status_cache_valid = 0U;
+    memset(s_connectivity_status_cache_valid, 0, sizeof(s_connectivity_status_cache_valid));
+    memset(s_connectivity_item_cache_valid, 0, sizeof(s_connectivity_item_cache_valid));
 }
 
 /* 澶勭悊 WiFi 椤甸潰鎸夐敭锛岃礋璐ｅ紑鍏?WiFi 鎴栧敜閱掍富鏈虹姸鎬佸悓姝ャ€?*/
@@ -2494,6 +2593,7 @@ static void connectivity_render(uint8_t full_refresh)
 static void power_page_on_enter(ui_page_id_t previous_page)
 {
     (void)previous_page;
+    (void)&page_set_power_policy_async;
     s_power_selected = 0U;
 }
 
@@ -2526,18 +2626,13 @@ static void power_page_on_key(uint8_t key_value)
     {
         if (s_power_selected == 0U)
         {
-            updated.power_policy =
-                (power_policy_t)(((uint32_t)updated.power_policy + 1U) % (uint32_t)POWER_POLICY_COUNT);
+            updated.screen_off_timeout_ms = page_next_screen_off_timeout_ms(updated.screen_off_timeout_ms);
         }
         else if (s_power_selected == 1U)
         {
-            updated.screen_off_timeout_ms = page_next_screen_off_timeout_ms(updated.screen_off_timeout_ms);
-        }
-        else if (s_power_selected == 2U)
-        {
             updated.standby_enabled = (uint8_t)!updated.standby_enabled;
         }
-        else if (s_power_selected == 3U)
+        else if (s_power_selected == 2U)
         {
             if (esp_host_is_forced_deep_sleep() == 0U)
             {
@@ -2559,12 +2654,6 @@ static void power_page_on_key(uint8_t key_value)
 
         if (page_store_settings(&updated) != 0U)
         {
-            if (s_power_selected == 0U)
-            {
-                (void)page_set_power_policy_async(updated.power_policy);
-                (void)page_set_host_state_async(power_manager_get_state());
-                power_draw_info_rows();
-            }
             power_draw_item(s_power_selected);
         }
     }
@@ -2584,7 +2673,7 @@ static void power_page_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_product_page("Power", "Mode / Screen / Save", PAGE_UI_ACCENT_COLOR);
+    ui_renderer_draw_product_page("Power", "Screen / Standby / Save", PAGE_UI_ACCENT_COLOR);
     power_draw_info_rows();
     power_draw_items();
 }
