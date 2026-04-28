@@ -93,6 +93,7 @@ typedef struct
     uint32_t thermal_capture_failures;
     uint32_t thermal_fps;
     uint32_t thermal_display_fps;
+    uint32_t lcd_present_fps;
     uint32_t thermal_display_age_samples;
     uint32_t thermal_display_age_last_ms;
     uint32_t thermal_display_age_max_ms;

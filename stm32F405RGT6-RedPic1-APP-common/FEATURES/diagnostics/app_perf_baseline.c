@@ -18,6 +18,7 @@ static volatile uint32_t s_thermal_display_frames = 0U;
 static volatile uint32_t s_thermal_capture_failures = 0U;
 static volatile uint32_t s_thermal_fps = 0U;
 static volatile uint32_t s_thermal_display_fps = 0U;
+static volatile uint32_t s_lcd_present_fps = 0U;
 static volatile uint32_t s_last_capture_tick_ms = 0U;
 static volatile uint32_t s_fps_window_start_ms = 0U;
 static volatile uint32_t s_fps_window_count = 0U;
@@ -304,6 +305,7 @@ void app_perf_baseline_reset(void)
     s_thermal_capture_failures = 0U;
     s_thermal_fps = 0U;
     s_thermal_display_fps = 0U;
+    s_lcd_present_fps = 0U;
     s_last_capture_tick_ms = 0U;
     s_fps_window_start_ms = 0U;
     s_fps_window_count = 0U;
@@ -600,6 +602,7 @@ void app_perf_baseline_record_lcd_dma_result(uint32_t elapsed_us,
                 if (window_ms != 0U)
                 {
                     s_thermal_display_fps = (s_display_fps_window_count * 1000UL) / window_ms;
+                    s_lcd_present_fps = s_thermal_display_fps;
                 }
 
                 s_display_fps_window_start_ms = display_tick_ms;
@@ -1340,6 +1343,7 @@ void app_perf_baseline_get_snapshot(app_perf_baseline_snapshot_t *snapshot)
     snapshot->thermal_capture_failures = s_thermal_capture_failures;
     snapshot->thermal_fps = s_thermal_fps;
     snapshot->thermal_display_fps = s_thermal_display_fps;
+    snapshot->lcd_present_fps = s_lcd_present_fps;
     snapshot->thermal_display_age_samples = s_thermal_display_age_stats.count;
     snapshot->thermal_display_age_last_ms = s_thermal_display_age_stats.last;
     snapshot->thermal_display_age_max_ms = s_thermal_display_age_stats.max;

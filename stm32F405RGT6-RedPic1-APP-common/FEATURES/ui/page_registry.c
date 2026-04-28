@@ -3220,7 +3220,7 @@ static void perf_baseline_draw_snapshot(const app_perf_baseline_snapshot_t *snap
 
     has_frame = (snapshot->thermal_capture_frames != 0U) ? 1U : 0U;
 
-    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->thermal_fps);
+    snprintf(value, sizeof(value), "%lu", (unsigned long)snapshot->lcd_present_fps);
     perf_baseline_draw_value_text(page_list_item_y(UI_CONTENT_TOP, 0U), value, DARKBLUE);
 
     perf_baseline_format_temp(value, sizeof(value), snapshot->latest_min_temp, has_frame);

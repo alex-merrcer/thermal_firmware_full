@@ -72,16 +72,49 @@ static uint8_t  s_overlayHold = 0U;                                            /
 static uint8_t  s_colorMode = 0U;                                              ///< 调色板模式 (0~4)
 static uint8_t  s_diag_pattern_ready = 0U;                                     ///< 诊断测试图案就绪标志
 static uint8_t  s_runtime_overlay_visible = 1U;                                ///< 底部状态栏可见性开关
-static char     s_overlay_bar_last_line[64];                                   ///< 上次实际绘制到屏幕的文本缓存
-static char     s_overlay_bar_pending_line[64];                                ///< 待刷新的新文本缓存
 static uint32_t s_overlay_bar_last_refresh_ms = 0U;                            ///< 上次状态栏刷新时间戳
 static uint32_t s_key2_ignore_until_ms = 0U;                                   ///< 进页后短时间忽略 KEY2，避免入页按键尾波
 static uint8_t  s_overlay_bar_last_visible = 0U;                               ///< 上次状态栏是否可见
-static uint8_t  s_overlay_bar_last_line_valid = 0U;                            ///< 上次缓存文本是否有效
 static uint8_t  s_overlay_bar_pending_dirty = 1U;                              ///< 待刷新文本是否变更 (脏标志)
 static uint8_t  s_overlay_bar_dirty_reason_mask = REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE; ///< 当前底栏脏原因掩码
 
 static CCMRAM uint8_t s_diag_pattern_frame[REDPIC1_THERMAL_PIXEL_COUNT];       ///< 诊断测试图案灰度数据 (CCM RAM)
+
+#define REDPIC1_THERMAL_UI_RGB565(r, g, b) ((uint16_t)((((uint16_t)(r) & 0xF8U) << 8) | \
+                                                       (((uint16_t)(g) & 0xFCU) << 3) | \
+                                                       (((uint16_t)(b) & 0xF8U) >> 3)))
+#define REDPIC1_THERMAL_OVERLAY_BG_COLOR               REDPIC1_THERMAL_UI_RGB565(5U, 18U, 30U)
+#define REDPIC1_THERMAL_OVERLAY_TOP_LINE_COLOR         REDPIC1_THERMAL_UI_RGB565(48U, 78U, 96U)
+#define REDPIC1_THERMAL_OVERLAY_LABEL_FPS_COLOR        REDPIC1_THERMAL_UI_RGB565(90U, 220U, 230U)
+#define REDPIC1_THERMAL_OVERLAY_LABEL_MIN_COLOR        REDPIC1_THERMAL_UI_RGB565(90U, 220U, 230U)
+#define REDPIC1_THERMAL_OVERLAY_LABEL_MAX_COLOR        REDPIC1_THERMAL_UI_RGB565(255U, 176U, 64U)
+#define REDPIC1_THERMAL_OVERLAY_LABEL_CENTER_COLOR     WHITE
+#define REDPIC1_THERMAL_OVERLAY_VALUE_COLOR            WHITE
+#define REDPIC1_THERMAL_OVERLAY_SEGMENT_LINE_COLOR     REDPIC1_THERMAL_UI_RGB565(18U, 40U, 58U)
+
+#define REDPIC1_THERMAL_OVERLAY_FPS_LABEL_X            4U
+#define REDPIC1_THERMAL_OVERLAY_FPS_VALUE_X            30U
+#define REDPIC1_THERMAL_OVERLAY_FPS_VALUE_W            24U
+#define REDPIC1_THERMAL_OVERLAY_MIN_LABEL_X            58U
+#define REDPIC1_THERMAL_OVERLAY_MIN_VALUE_X            90U
+#define REDPIC1_THERMAL_OVERLAY_MIN_VALUE_W            48U
+#define REDPIC1_THERMAL_OVERLAY_MAX_LABEL_X            142U
+#define REDPIC1_THERMAL_OVERLAY_MAX_VALUE_X            174U
+#define REDPIC1_THERMAL_OVERLAY_MAX_VALUE_W            48U
+#define REDPIC1_THERMAL_OVERLAY_CENTER_LABEL_X         226U
+#define REDPIC1_THERMAL_OVERLAY_CENTER_VALUE_X         258U
+#define REDPIC1_THERMAL_OVERLAY_CENTER_VALUE_W         58U
+
+typedef struct
+{
+    uint8_t valid;
+    uint32_t lcd_fps;
+    char min_text[12];
+    char max_text[12];
+    char center_text[12];
+} redpic1_thermal_bottom_bar_view_t;
+
+static redpic1_thermal_bottom_bar_view_t s_overlay_bar_last_view;
 
 static uint8_t redpic1_thermal_present_gray_frame(const uint8_t *gray_frame);
 /* ========================================================================= */
@@ -187,70 +220,222 @@ static void redpic1_thermal_format_overlay_temp(char *buffer,uint16_t buffer_len
  * @param line_text_len 缓冲区长度
  * @details 从性能基线模块获取 FPS 与极值温度，拼接为 UTF-8 编码字符串。
  */
-static void redpic1_thermal_build_bottom_bar_line(char *line_text, uint16_t line_text_len)
+static uint16_t redpic1_thermal_bottom_bar_top(void)
+{
+    return (uint16_t)((LCD_H > REDPIC1_THERMAL_OVERLAY_BAR_HEIGHT)
+                          ? (LCD_H - REDPIC1_THERMAL_OVERLAY_BAR_HEIGHT)
+                          : 0U);
+}
+
+static void redpic1_thermal_build_bottom_bar_view(redpic1_thermal_bottom_bar_view_t *view)
 {
     app_perf_baseline_snapshot_t snapshot;
-    char min_text[12];
-    char max_text[12];
-    char center_text[12];
     uint8_t has_value = 0U;
 
-    if (line_text == 0 || line_text_len == 0U)
+    if (view == 0)
     {
         return;
     }
 
+    memset(view, 0, sizeof(*view));
     app_perf_baseline_get_snapshot(&snapshot);
     has_value = (snapshot.thermal_capture_frames != 0U) ? 1U : 0U;
 
-    redpic1_thermal_format_overlay_temp(min_text,sizeof(min_text),snapshot.latest_min_temp,has_value);
-		
-    redpic1_thermal_format_overlay_temp(max_text,sizeof(max_text),snapshot.latest_max_temp,has_value);
-		
-    redpic1_thermal_format_overlay_temp(center_text,sizeof(center_text),snapshot.latest_center_temp,has_value);
+    view->valid = 1U;
+    view->lcd_fps = snapshot.lcd_present_fps;
+    redpic1_thermal_format_overlay_temp(view->min_text,
+                                        sizeof(view->min_text),
+                                        snapshot.latest_min_temp,
+                                        has_value);
+    redpic1_thermal_format_overlay_temp(view->max_text,
+                                        sizeof(view->max_text),
+                                        snapshot.latest_max_temp,
+                                        has_value);
+    redpic1_thermal_format_overlay_temp(view->center_text,
+                                        sizeof(view->center_text),
+                                        snapshot.latest_center_temp,
+                                        has_value);
+}
 
-    snprintf(line_text,
-             line_text_len,"FPS:%lu  "
-             "\xE6\x9C\x80\xE4\xBD\x8E:%s  "
-             "\xE6\x9C\x80\xE9\xAB\x98:%s  "
-             "\xE4\xB8\xAD\xE5\xBF\x83:%s",
-             (unsigned long)snapshot.thermal_display_fps,min_text,max_text,center_text);
+static uint8_t redpic1_thermal_bottom_bar_view_equal(const redpic1_thermal_bottom_bar_view_t *a,
+                                                     const redpic1_thermal_bottom_bar_view_t *b)
+{
+    if (a == 0 || b == 0)
+    {
+        return 0U;
+    }
+
+    if (a->valid != b->valid || a->lcd_fps != b->lcd_fps)
+    {
+        return 0U;
+    }
+    if (strcmp(a->min_text, b->min_text) != 0)
+    {
+        return 0U;
+    }
+    if (strcmp(a->max_text, b->max_text) != 0)
+    {
+        return 0U;
+    }
+    if (strcmp(a->center_text, b->center_text) != 0)
+    {
+        return 0U;
+    }
+
+    return 1U;
 }
 
 /**
  * @brief 在 LCD 底部绘制状态栏文本。
  * @param line_text 待绘制的 UTF-8 字符串
  */
-static void redpic1_thermal_draw_bottom_bar_line(const char *line_text)
+static void redpic1_thermal_draw_bottom_bar_bg(void)
 {
-    uint16_t bar_top = 0U;
+    uint16_t bar_top = redpic1_thermal_bottom_bar_top();
+    uint16_t bar_bottom = (uint16_t)(LCD_H - 1U);
 
-    if (line_text == 0)
-    {
-        return;
-    }
-
-    if (LCD_H > REDPIC1_THERMAL_OVERLAY_BAR_HEIGHT)
-    {
-        bar_top = (uint16_t)(LCD_H - REDPIC1_THERMAL_OVERLAY_BAR_HEIGHT);
-    }
-
-    LCD_Fill(0U, bar_top, (uint16_t)(LCD_W - 1U), (uint16_t)(LCD_H - 1U), BLACK);
+    LCD_Fill(0U, bar_top, (uint16_t)(LCD_W - 1U), bar_bottom, REDPIC1_THERMAL_OVERLAY_BG_COLOR);
     if (bar_top > 0U)
     {
         LCD_DrawLine(0U,
                      (uint16_t)(bar_top - 1U),
                      (uint16_t)(LCD_W - 1U),
                      (uint16_t)(bar_top - 1U),
-                     WHITE);
+                     REDPIC1_THERMAL_OVERLAY_TOP_LINE_COLOR);
     }
-    LCD_ShowUTF8String(REDPIC1_THERMAL_OVERLAY_BAR_TEXT_X,
+
+    LCD_DrawLine(54U, bar_top, 54U, bar_bottom, REDPIC1_THERMAL_OVERLAY_SEGMENT_LINE_COLOR);
+    LCD_DrawLine(138U, bar_top, 138U, bar_bottom, REDPIC1_THERMAL_OVERLAY_SEGMENT_LINE_COLOR);
+    LCD_DrawLine(222U, bar_top, 222U, bar_bottom, REDPIC1_THERMAL_OVERLAY_SEGMENT_LINE_COLOR);
+
+    LCD_ShowUTF8String(REDPIC1_THERMAL_OVERLAY_FPS_LABEL_X,
                        (uint16_t)(bar_top + REDPIC1_THERMAL_OVERLAY_BAR_TEXT_Y_OFFSET),
-                       line_text,
-                       YELLOW,
-                       BLACK,
+                       "FPS",
+                       REDPIC1_THERMAL_OVERLAY_LABEL_FPS_COLOR,
+                       REDPIC1_THERMAL_OVERLAY_BG_COLOR,
                        16,
                        0);
+    LCD_ShowUTF8String(REDPIC1_THERMAL_OVERLAY_MIN_LABEL_X,
+                       (uint16_t)(bar_top + REDPIC1_THERMAL_OVERLAY_BAR_TEXT_Y_OFFSET),
+                       "\xE6\x9C\x80\xE4\xBD\x8E",
+                       REDPIC1_THERMAL_OVERLAY_LABEL_MIN_COLOR,
+                       REDPIC1_THERMAL_OVERLAY_BG_COLOR,
+                       16,
+                       0);
+    LCD_ShowUTF8String(REDPIC1_THERMAL_OVERLAY_MAX_LABEL_X,
+                       (uint16_t)(bar_top + REDPIC1_THERMAL_OVERLAY_BAR_TEXT_Y_OFFSET),
+                       "\xE6\x9C\x80\xE9\xAB\x98",
+                       REDPIC1_THERMAL_OVERLAY_LABEL_MAX_COLOR,
+                       REDPIC1_THERMAL_OVERLAY_BG_COLOR,
+                       16,
+                       0);
+    LCD_ShowUTF8String(REDPIC1_THERMAL_OVERLAY_CENTER_LABEL_X,
+                       (uint16_t)(bar_top + REDPIC1_THERMAL_OVERLAY_BAR_TEXT_Y_OFFSET),
+                       "\xE4\xB8\xAD\xE5\xBF\x83",
+                       REDPIC1_THERMAL_OVERLAY_LABEL_CENTER_COLOR,
+                       REDPIC1_THERMAL_OVERLAY_BG_COLOR,
+                       16,
+                       0);
+}
+
+static void redpic1_thermal_draw_bottom_bar_value(uint16_t value_x,
+                                                  uint16_t value_width,
+                                                  const char *value_text)
+{
+    uint16_t bar_top = redpic1_thermal_bottom_bar_top();
+    uint16_t value_x_end = (uint16_t)(value_x + value_width - 1U);
+
+    if (value_text == 0 || value_width == 0U)
+    {
+        return;
+    }
+
+    LCD_Fill(value_x,
+             bar_top,
+             value_x_end,
+             (uint16_t)(LCD_H - 1U),
+             REDPIC1_THERMAL_OVERLAY_BG_COLOR);
+    LCD_ShowUTF8String(value_x,
+                       (uint16_t)(bar_top + REDPIC1_THERMAL_OVERLAY_BAR_TEXT_Y_OFFSET),
+                       value_text,
+                       REDPIC1_THERMAL_OVERLAY_VALUE_COLOR,
+                       REDPIC1_THERMAL_OVERLAY_BG_COLOR,
+                       16,
+                       0);
+}
+
+static void redpic1_thermal_draw_bottom_bar_values(const redpic1_thermal_bottom_bar_view_t *view)
+{
+    char fps_text[8];
+    char temp_text[16];
+
+    if (view == 0)
+    {
+        return;
+    }
+
+    snprintf(fps_text, sizeof(fps_text), "%lu", (unsigned long)view->lcd_fps);
+    redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_FPS_VALUE_X,
+                                          REDPIC1_THERMAL_OVERLAY_FPS_VALUE_W,
+                                          fps_text);
+
+    snprintf(temp_text, sizeof(temp_text), "%sC", view->min_text);
+    redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_MIN_VALUE_X,
+                                          REDPIC1_THERMAL_OVERLAY_MIN_VALUE_W,
+                                          temp_text);
+
+    snprintf(temp_text, sizeof(temp_text), "%sC", view->max_text);
+    redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_MAX_VALUE_X,
+                                          REDPIC1_THERMAL_OVERLAY_MAX_VALUE_W,
+                                          temp_text);
+
+    snprintf(temp_text, sizeof(temp_text), "%sC", view->center_text);
+    redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_CENTER_VALUE_X,
+                                          REDPIC1_THERMAL_OVERLAY_CENTER_VALUE_W,
+                                          temp_text);
+}
+
+static void redpic1_thermal_draw_bottom_bar_diff(const redpic1_thermal_bottom_bar_view_t *view)
+{
+    char fps_text[8];
+    char temp_text[16];
+
+    if (view == 0)
+    {
+        return;
+    }
+
+    if (view->lcd_fps != s_overlay_bar_last_view.lcd_fps)
+    {
+        snprintf(fps_text, sizeof(fps_text), "%lu", (unsigned long)view->lcd_fps);
+        redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_FPS_VALUE_X,
+                                              REDPIC1_THERMAL_OVERLAY_FPS_VALUE_W,
+                                              fps_text);
+    }
+
+    if (strcmp(view->min_text, s_overlay_bar_last_view.min_text) != 0)
+    {
+        snprintf(temp_text, sizeof(temp_text), "%sC", view->min_text);
+        redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_MIN_VALUE_X,
+                                              REDPIC1_THERMAL_OVERLAY_MIN_VALUE_W,
+                                              temp_text);
+    }
+
+    if (strcmp(view->max_text, s_overlay_bar_last_view.max_text) != 0)
+    {
+        snprintf(temp_text, sizeof(temp_text), "%sC", view->max_text);
+        redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_MAX_VALUE_X,
+                                              REDPIC1_THERMAL_OVERLAY_MAX_VALUE_W,
+                                              temp_text);
+    }
+
+    if (strcmp(view->center_text, s_overlay_bar_last_view.center_text) != 0)
+    {
+        snprintf(temp_text, sizeof(temp_text), "%sC", view->center_text);
+        redpic1_thermal_draw_bottom_bar_value(REDPIC1_THERMAL_OVERLAY_CENTER_VALUE_X,
+                                              REDPIC1_THERMAL_OVERLAY_CENTER_VALUE_W,
+                                              temp_text);
+    }
 }
 
 /**
@@ -258,15 +443,9 @@ static void redpic1_thermal_draw_bottom_bar_line(const char *line_text)
  */
 static void redpic1_thermal_clear_bottom_bar(void)
 {
-    uint16_t bar_top = 0U;
-    uint16_t clear_top = 0U;
+    uint16_t bar_top = redpic1_thermal_bottom_bar_top();
+    uint16_t clear_top = (bar_top > 0U) ? (uint16_t)(bar_top - 1U) : bar_top;
 
-    if (LCD_H > REDPIC1_THERMAL_OVERLAY_BAR_HEIGHT)
-    {
-        bar_top = (uint16_t)(LCD_H - REDPIC1_THERMAL_OVERLAY_BAR_HEIGHT);
-    }
-
-    clear_top = (bar_top > 0U) ? (uint16_t)(bar_top - 1U) : bar_top;
     LCD_Fill(0U, clear_top, (uint16_t)(LCD_W - 1U), (uint16_t)(LCD_H - 1U), BLACK);
 }
 
@@ -287,11 +466,9 @@ static void redpic1_thermal_clear_bottom_bar_dirty(void)
  */
 static void redpic1_thermal_reset_bottom_bar_cache(void)
 {
-    s_overlay_bar_last_line[0] = '\0';
-    s_overlay_bar_pending_line[0] = '\0';
+    memset(&s_overlay_bar_last_view, 0, sizeof(s_overlay_bar_last_view));
     s_overlay_bar_last_refresh_ms = 0U;
     s_overlay_bar_last_visible = 0U;
-    s_overlay_bar_last_line_valid = 0U;
     s_overlay_bar_dirty_reason_mask = 0U;
     redpic1_thermal_mark_bottom_bar_dirty((uint8_t)(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE |
                                                      REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE));
@@ -501,7 +678,7 @@ void redpic1_thermal_init(void)
         delay_ms(200);
     }
 
-    s_colorMode = 3U;
+    s_colorMode = 0U;
     s_runEnabled = 1U;
     s_refreshRate = REDPIC1_THERMAL_ACTIVE_REFRESH_RATE;
     s_overlayHold = 0U;
@@ -706,38 +883,38 @@ void redpic1_thermal_force_refresh(void)
 
 void redpic1_thermal_render_runtime_overlay(void)
 {
-    char line_text[64];
+    redpic1_thermal_bottom_bar_view_t current_view;
     uint32_t now_ms = power_manager_get_tick_ms();
 
     if (s_runtime_overlay_visible == 0U)
     {
-        if (s_overlay_bar_last_visible != 0U || s_overlay_bar_last_line_valid != 0U)
+        if (s_overlay_bar_last_visible != 0U || s_overlay_bar_last_view.valid != 0U)
         {
             redpic1_thermal_clear_bottom_bar();
             s_overlay_bar_last_visible = 0U;
-            s_overlay_bar_last_line_valid = 0U;
+            s_overlay_bar_last_view.valid = 0U;
             redpic1_thermal_mark_bottom_bar_dirty((uint8_t)(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE |
                                                              REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE));
         }
         return;
     }
 
-    redpic1_thermal_build_bottom_bar_line(line_text, sizeof(line_text));
-    if (strcmp(s_overlay_bar_pending_line, line_text) != 0)
-    {
-        snprintf(s_overlay_bar_pending_line, sizeof(s_overlay_bar_pending_line), "%s", line_text);
-        redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_TEXT);
-    }
+    redpic1_thermal_build_bottom_bar_view(&current_view);
 
-    if (s_overlay_bar_last_visible == 0U || s_overlay_bar_last_line_valid == 0U)
+    if (s_overlay_bar_last_visible == 0U || s_overlay_bar_last_view.valid == 0U)
     {
-        redpic1_thermal_draw_bottom_bar_line(s_overlay_bar_pending_line);
-        snprintf(s_overlay_bar_last_line, sizeof(s_overlay_bar_last_line), "%s", s_overlay_bar_pending_line);
+        redpic1_thermal_draw_bottom_bar_bg();
+        redpic1_thermal_draw_bottom_bar_values(&current_view);
+        s_overlay_bar_last_view = current_view;
         s_overlay_bar_last_visible = 1U;
-        s_overlay_bar_last_line_valid = 1U;
         redpic1_thermal_clear_bottom_bar_dirty();
         s_overlay_bar_last_refresh_ms = now_ms;
         return;
+    }
+
+    if (redpic1_thermal_bottom_bar_view_equal(&current_view, &s_overlay_bar_last_view) == 0U)
+    {
+        redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_TEXT);
     }
 
     if (s_overlay_bar_pending_dirty == 0U)
@@ -752,10 +929,19 @@ void redpic1_thermal_render_runtime_overlay(void)
         return;
     }
 
-    redpic1_thermal_draw_bottom_bar_line(s_overlay_bar_pending_line);
-    snprintf(s_overlay_bar_last_line, sizeof(s_overlay_bar_last_line), "%s", s_overlay_bar_pending_line);
+    if ((s_overlay_bar_dirty_reason_mask &
+         (REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE | REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_VISIBLE)) != 0U)
+    {
+        redpic1_thermal_draw_bottom_bar_bg();
+        redpic1_thermal_draw_bottom_bar_values(&current_view);
+    }
+    else
+    {
+        redpic1_thermal_draw_bottom_bar_diff(&current_view);
+    }
+
+    s_overlay_bar_last_view = current_view;
     s_overlay_bar_last_visible = 1U;
-    s_overlay_bar_last_line_valid = 1U;
     redpic1_thermal_clear_bottom_bar_dirty();
     s_overlay_bar_last_refresh_ms = now_ms;
 }
