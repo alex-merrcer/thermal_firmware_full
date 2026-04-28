@@ -95,7 +95,16 @@ typedef enum {
                                             (((uint16_t)(b) & 0xF8U) >> 3)))
 #define LCD_DMA_THERMAL_CROSS_COLOR_PRODUCT  LCD_DMA_RGB565(210U, 230U, 230U)
 #define LCD_DMA_THERMAL_CROSS_CENTER_PRODUCT LCD_DMA_RGB565(255U, 255U, 255U)
+#define THERMAL_ENABLE_OLD_PALETTE_MAP       1
+#define THERMAL_ENABLE_TONE_LUT              1
+#define THERMAL_TONE_LUT_START_GRAY          180U
+#define THERMAL_TONE_LUT_INPUT_SPAN          75U
+#define THERMAL_TONE_LUT_OUTPUT_SPAN         70U
+#define THERMAL_VISIBLE_PALETTE_WHITE_HOT    0xFEU
+#define THERMAL_VISIBLE_PALETTE_BLACK_HOT    0xFFU
+#define THERMAL_VISIBLE_PALETTE_COUNT        5U
 
+#if !THERMAL_ENABLE_OLD_PALETTE_MAP
 static const thermal_palette_stop_t kPaletteIron[] = {
     {  0U,   0U,   0U,   0U},
     { 32U,  28U,   0U,  70U},
@@ -135,6 +144,18 @@ static const thermal_palette_stop_t kPaletteArctic[] = {
     {230U, 255U, 190U,  60U},
     {255U, 255U, 245U, 200U}
 };
+#endif
+
+static const uint8_t kVisiblePaletteMap[THERMAL_VISIBLE_PALETTE_COUNT] = {
+    3U,
+    4U,
+    1U,
+    2U,
+    7U
+};
+
+static uint8_t s_thermal_tone_lut[256];
+static uint8_t s_thermal_tone_lut_ready = 0U;
 
 
 #if LCD_DMA_STAGE6_6B_ACTIVE
@@ -1187,6 +1208,7 @@ static uint16_t lcd_dma_rgb565_from_rgb888(uint8_t r, uint8_t g, uint8_t b)
     return LCD_DMA_RGB565(r, g, b);
 }
 
+#if !THERMAL_ENABLE_OLD_PALETTE_MAP
 static void thermal_palette_build_lut(const thermal_palette_stop_t *stops,
                                       uint8_t stop_count,
                                       uint16_t *lut)
@@ -1221,15 +1243,90 @@ static void thermal_palette_build_lut(const thermal_palette_stop_t *stops,
         }
     }
 }
+#endif
+
+static void thermal_build_tone_lut(void)
+{
+    uint16_t i = 0U;
+
+    for (i = 0U; i < 256U; ++i)
+    {
+#if THERMAL_ENABLE_TONE_LUT
+        if (i <= THERMAL_TONE_LUT_START_GRAY)
+        {
+            s_thermal_tone_lut[i] = (uint8_t)i;
+        }
+        else
+        {
+            uint16_t delta = (uint16_t)(i - THERMAL_TONE_LUT_START_GRAY);
+            uint16_t mapped = (uint16_t)(THERMAL_TONE_LUT_START_GRAY +
+                                         ((delta * THERMAL_TONE_LUT_OUTPUT_SPAN) / THERMAL_TONE_LUT_INPUT_SPAN));
+
+            if (mapped > 255U)
+            {
+                mapped = 255U;
+            }
+
+            s_thermal_tone_lut[i] = (uint8_t)mapped;
+        }
+#else
+        s_thermal_tone_lut[i] = (uint8_t)i;
+#endif
+    }
+
+    s_thermal_tone_lut_ready = 1U;
+}
+
+static uint8_t thermal_apply_tone_map(uint8_t gray)
+{
+    if (s_thermal_tone_lut_ready == 0U)
+    {
+        thermal_build_tone_lut();
+    }
+
+    return s_thermal_tone_lut[gray];
+}
+
+static uint16_t thermal_visible_palette_color(uint8_t gray, uint16_t visible_mode)
+{
+    uint8_t mapped_gray = thermal_apply_tone_map(gray);
+    uint8_t real_palette = kVisiblePaletteMap[visible_mode % THERMAL_VISIBLE_PALETTE_COUNT];
+
+#if THERMAL_ENABLE_OLD_PALETTE_MAP
+    if (real_palette == THERMAL_VISIBLE_PALETTE_WHITE_HOT)
+    {
+        return lcd_dma_rgb565_from_rgb888(mapped_gray, mapped_gray, mapped_gray);
+    }
+
+    if (real_palette == THERMAL_VISIBLE_PALETTE_BLACK_HOT)
+    {
+        uint8_t inverted = (uint8_t)(255U - mapped_gray);
+        return lcd_dma_rgb565_from_rgb888(inverted, inverted, inverted);
+    }
+
+    return color_code(mapped_gray, real_palette);
+#else
+    (void)real_palette;
+    return GCM_Pseudo3[mapped_gray];
+#endif
+}
 
 void color_listcode(uint16_t *color_list, uint16_t mode)
 {
-    thermal_palette_id_t palette_id = (thermal_palette_id_t)(mode % THERMAL_PALETTE_COUNT);
+    uint16_t gray = 0U;
 
     if (color_list == 0)
     {
         return;
     }
+
+#if THERMAL_ENABLE_OLD_PALETTE_MAP
+    for (gray = 0U; gray < 256U; ++gray)
+    {
+        color_list[gray] = thermal_visible_palette_color((uint8_t)gray, mode);
+    }
+#else
+    thermal_palette_id_t palette_id = (thermal_palette_id_t)(mode % THERMAL_PALETTE_COUNT);
 
     switch (palette_id)
     {
@@ -1254,11 +1351,12 @@ void color_listcode(uint16_t *color_list, uint16_t mode)
         thermal_palette_build_lut(kPaletteArctic, LCD_DMA_ARRAY_SIZE(kPaletteArctic), color_list);
         break;
     }
+#endif
 }
 /* 设置伪彩色模式并重建 LUT。 */
 void set_color_mode(uint16_t mode)
 {
-    color_listcode(GCM_Pseudo3, (uint16_t)(mode % THERMAL_PALETTE_COUNT));
+    color_listcode(GCM_Pseudo3, (uint16_t)(mode % THERMAL_VISIBLE_PALETTE_COUNT));
 }
 
 /* 热成像显示主入口：

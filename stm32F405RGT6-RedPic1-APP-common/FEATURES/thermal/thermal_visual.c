@@ -1,6 +1,7 @@
 #include "thermal_visual.h"
 
 #include <math.h>
+#include <string.h>
 
 #include "redpic1_thermal.h"
 
@@ -19,13 +20,25 @@
 #define THERMAL_VISUAL_HIGH_MOTION_DELTA_C            0.8f
 #define THERMAL_VISUAL_HIGH_MOTION_STRONG_DELTA_C     2.2f
 #define THERMAL_VISUAL_HIGH_MOTION_PIXEL_THRESHOLD    48U
+#define THERMAL_ENABLE_GRAY_SHARPEN                   1
+#define THERMAL_ENABLE_PERCENTILE_WINDOW              1
+#define THERMAL_VISUAL_PERCENTILE_LOW_PERMILLE        20U
+#define THERMAL_VISUAL_PERCENTILE_HIGH_PERMILLE       980U
+#define THERMAL_VISUAL_SHARPEN_NUM                    2
+#define THERMAL_VISUAL_SHARPEN_DEN                    5
+#define THERMAL_VISUAL_SHARPEN_MIN_DIFF               2
+#define THERMAL_VISUAL_SHARPEN_MAX_DIFF               24
 
 static float s_display_min_temp = 0.0f;
 static float s_display_max_temp = 0.0f;
 static uint8_t s_display_window_valid = 0U;
 static CCMRAM float s_previous_filtered_temp_frame[THERMAL_VISUAL_PIXEL_COUNT];
 static CCMRAM float s_current_visual_temp_frame[THERMAL_VISUAL_PIXEL_COUNT];
+static CCMRAM float s_percentile_sort_buffer[THERMAL_VISUAL_PIXEL_COUNT];
+static CCMRAM uint8_t s_gray_sharpen_source[THERMAL_VISUAL_PIXEL_COUNT];
 static uint8_t s_filter_history_valid = 0U;
+
+static uint8_t redpic1_thermal_visual_temp_in_range(float temp);
 
 static void redpic1_thermal_visual_reset_display_window_state(void)
 {
@@ -57,19 +70,20 @@ static float redpic1_thermal_visual_limit_display_window_step(float current_valu
     return current_value + delta;
 }
 
-static void redpic1_thermal_visual_get_display_window(float raw_min_temp,
-                                                      float raw_max_temp,
+static void redpic1_thermal_visual_get_display_window(float target_min_temp,
+                                                      float target_max_temp,
                                                       uint8_t high_motion_frame,
                                                       float *out_display_min_temp,
                                                       float *out_display_max_temp)
 {
     float ema_alpha = THERMAL_VISUAL_DISPLAY_WINDOW_NORMAL_EMA_ALPHA;
     float max_step_c = THERMAL_VISUAL_DISPLAY_WINDOW_NORMAL_MAX_STEP_C;
-    float center_temp = (raw_min_temp + raw_max_temp) * 0.5f;
-    float half_span = fmaxf((raw_max_temp - raw_min_temp) * 0.5f,
+    float center_temp = (target_min_temp + target_max_temp) * 0.5f;
+    float half_span = fmaxf((target_max_temp - target_min_temp) * 0.5f,
                             THERMAL_VISUAL_DISPLAY_WINDOW_HALF_SPAN_C);
-    float target_min_temp = center_temp - half_span;
-    float target_max_temp = center_temp + half_span;
+
+    target_min_temp = center_temp - half_span;
+    target_max_temp = center_temp + half_span;
 
     if (high_motion_frame != 0U)
     {
@@ -116,6 +130,97 @@ static void redpic1_thermal_visual_get_display_window(float raw_min_temp,
 
     *out_display_min_temp = s_display_min_temp;
     *out_display_max_temp = s_display_max_temp;
+}
+
+static void redpic1_thermal_visual_shell_sort(float *values, uint16_t count)
+{
+    uint16_t gap = count / 2U;
+
+    while (gap != 0U)
+    {
+        uint16_t i = 0U;
+
+        for (i = gap; i < count; ++i)
+        {
+            float temp = values[i];
+            uint16_t j = i;
+
+            while (j >= gap && values[j - gap] > temp)
+            {
+                values[j] = values[j - gap];
+                j = (uint16_t)(j - gap);
+            }
+
+            values[j] = temp;
+        }
+
+        gap = (gap == 1U) ? 0U : (uint16_t)(gap / 2U);
+    }
+}
+
+static void redpic1_thermal_visual_get_percentile_window(const float *frame_data,
+                                                         float raw_min_temp,
+                                                         float raw_max_temp,
+                                                         float *out_window_min_temp,
+                                                         float *out_window_max_temp)
+{
+    uint16_t valid_count = 0U;
+    uint16_t i = 0U;
+
+    if (out_window_min_temp == 0 || out_window_max_temp == 0)
+    {
+        return;
+    }
+
+    *out_window_min_temp = raw_min_temp;
+    *out_window_max_temp = raw_max_temp;
+
+#if THERMAL_ENABLE_PERCENTILE_WINDOW
+    if (frame_data == 0)
+    {
+        return;
+    }
+
+    for (i = 0U; i < THERMAL_VISUAL_PIXEL_COUNT; ++i)
+    {
+        float temp = frame_data[i];
+
+        if (redpic1_thermal_visual_temp_in_range(temp) == 0U)
+        {
+            continue;
+        }
+
+        s_percentile_sort_buffer[valid_count++] = temp;
+    }
+
+    if (valid_count < 16U)
+    {
+        return;
+    }
+
+    redpic1_thermal_visual_shell_sort(s_percentile_sort_buffer, valid_count);
+
+    {
+        uint16_t low_index = (uint16_t)((((uint32_t)(valid_count - 1U)) *
+                                         THERMAL_VISUAL_PERCENTILE_LOW_PERMILLE) /
+                                        1000UL);
+        uint16_t high_index = (uint16_t)((((uint32_t)(valid_count - 1U)) *
+                                          THERMAL_VISUAL_PERCENTILE_HIGH_PERMILLE) /
+                                         1000UL);
+        float percentile_min = s_percentile_sort_buffer[low_index];
+        float percentile_max = s_percentile_sort_buffer[high_index];
+
+        if (high_index <= low_index || percentile_max <= percentile_min)
+        {
+            return;
+        }
+
+        *out_window_min_temp = percentile_min;
+        *out_window_max_temp = percentile_max;
+    }
+#else
+    (void)frame_data;
+#endif
 }
 
 static void redpic1_thermal_visual_reset_filter_state(void)
@@ -232,6 +337,76 @@ static uint8_t redpic1_thermal_visual_temp_in_range(float temp)
     return 1U;
 }
 
+static uint8_t redpic1_thermal_visual_clamp_u8_int(int32_t value)
+{
+    if (value < 0)
+    {
+        return 0U;
+    }
+    if (value > 255)
+    {
+        return 255U;
+    }
+
+    return (uint8_t)value;
+}
+
+static uint16_t redpic1_thermal_visual_gray_index(uint16_t row, uint16_t col)
+{
+    return (uint16_t)(col * THERMAL_VISUAL_SRC_ROWS + row);
+}
+
+static void redpic1_thermal_visual_sharpen_gray_frame(uint8_t *gray_frame)
+{
+#if THERMAL_ENABLE_GRAY_SHARPEN
+    uint16_t row = 0U;
+    uint16_t col = 0U;
+
+    if (gray_frame == 0)
+    {
+        return;
+    }
+
+    memcpy(s_gray_sharpen_source, gray_frame, sizeof(s_gray_sharpen_source));
+
+    for (row = 1U; row < (THERMAL_VISUAL_SRC_ROWS - 1U); ++row)
+    {
+        for (col = 1U; col < (THERMAL_VISUAL_SRC_COLS - 1U); ++col)
+        {
+            uint16_t idx = redpic1_thermal_visual_gray_index(row, col);
+            int32_t center = s_gray_sharpen_source[idx];
+            int32_t up = s_gray_sharpen_source[redpic1_thermal_visual_gray_index((uint16_t)(row - 1U), col)];
+            int32_t down = s_gray_sharpen_source[redpic1_thermal_visual_gray_index((uint16_t)(row + 1U), col)];
+            int32_t left = s_gray_sharpen_source[redpic1_thermal_visual_gray_index(row, (uint16_t)(col - 1U))];
+            int32_t right = s_gray_sharpen_source[redpic1_thermal_visual_gray_index(row, (uint16_t)(col + 1U))];
+            int32_t avg = (up + down + left + right) / 4;
+            int32_t diff = center - avg;
+            int32_t abs_diff = (diff < 0) ? -diff : diff;
+            int32_t sharp = 0;
+
+            if (abs_diff < THERMAL_VISUAL_SHARPEN_MIN_DIFF)
+            {
+                continue;
+            }
+
+            if (diff > THERMAL_VISUAL_SHARPEN_MAX_DIFF)
+            {
+                diff = THERMAL_VISUAL_SHARPEN_MAX_DIFF;
+            }
+            else if (diff < -THERMAL_VISUAL_SHARPEN_MAX_DIFF)
+            {
+                diff = -THERMAL_VISUAL_SHARPEN_MAX_DIFF;
+            }
+
+            sharp = center + ((diff * THERMAL_VISUAL_SHARPEN_NUM) / THERMAL_VISUAL_SHARPEN_DEN);
+            gray_frame[idx] = redpic1_thermal_visual_clamp_u8_int(sharp);
+        }
+    }
+#else
+    (void)gray_frame;
+#endif
+}
+
 void redpic1_thermal_visual_init(const redpic1_thermal_visual_ops_t *ops)
 {
     (void)ops;
@@ -279,6 +454,8 @@ void redpic1_thermal_visual_prepare_gray_frame(const float *raw_frame_data,
 {
     float raw_min_temp = 300.0f;
     float raw_max_temp = -40.0f;
+    float target_window_min_temp = 0.0f;
+    float target_window_max_temp = 0.0f;
     float display_min_temp = 0.0f;
     float display_max_temp = 0.0f;
     float scale = 0.0f;
@@ -321,8 +498,14 @@ void redpic1_thermal_visual_prepare_gray_frame(const float *raw_frame_data,
         return;
     }
 
-    redpic1_thermal_visual_get_display_window(raw_min_temp,
-                                              raw_max_temp,
+    redpic1_thermal_visual_get_percentile_window(display_frame_data,
+                                                 raw_min_temp,
+                                                 raw_max_temp,
+                                                 &target_window_min_temp,
+                                                 &target_window_max_temp);
+
+    redpic1_thermal_visual_get_display_window(target_window_min_temp,
+                                              target_window_max_temp,
                                               high_motion_frame,
                                               &display_min_temp,
                                               &display_max_temp);
@@ -358,6 +541,8 @@ void redpic1_thermal_visual_prepare_gray_frame(const float *raw_frame_data,
             dst += THERMAL_VISUAL_SRC_ROWS;
         }
     }
+
+    redpic1_thermal_visual_sharpen_gray_frame(gray_frame);
 
     if (out_min_temp != 0)
     {
