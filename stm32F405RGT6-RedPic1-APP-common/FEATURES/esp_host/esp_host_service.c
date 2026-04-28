@@ -9,6 +9,9 @@
 #include "ota_ctrl_protocol.h"
 #include "power_manager.h"
 #include "usart.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
 
 #define ESP_HOST_REQ_TIMEOUT_MS      400U
 #define ESP_HOST_OFFLINE_GRACE_MS    5000UL
@@ -19,6 +22,7 @@
 #define ESP_HOST_WAKE_PREAMBLE_DELAY_MS 4U
 #define ESP_HOST_RETRY_COUNT         2U
 #define ESP_HOST_RETRY_DELAY_MS      20U
+#define ESP_HOST_UART_LOCK_TIMEOUT_MS 10U
 
 typedef struct
 {
@@ -32,6 +36,7 @@ static esp_host_status_t s_status;
 static uint8_t s_host_seq = 1U;
 static uint8_t s_consecutive_failures = 0U;
 static uint8_t s_forced_deep_sleep = 0U;
+static SemaphoreHandle_t s_uart_guard_mutex = 0;
 
 static uint8_t esp_host_exchange(uint8_t cmd,
                                  uint8_t arg0,
@@ -45,6 +50,79 @@ static uint8_t esp_host_encode_power_policy(power_policy_t policy);
 static uint8_t esp_host_encode_host_state(power_state_t state);
 static uint8_t esp_host_set_raw_host_state_now(uint8_t host_state, uint8_t *response_payload);
 static uint8_t esp_host_wait_ready_for_sleep(uint32_t timeout_ms);
+static uint8_t esp_host_scheduler_running(void);
+static void esp_host_delay_poll_step(uint32_t *waited_us, uint32_t timeout_us);
+
+static uint8_t esp_host_scheduler_running(void)
+{
+    return (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) ? 1U : 0U;
+}
+
+uint8_t esp_host_uart_guard_lock(uint32_t timeout_ms)
+{
+    TickType_t wait_ticks = 0U;
+
+    if (esp_host_scheduler_running() == 0U)
+    {
+        return 1U;
+    }
+
+    if (s_uart_guard_mutex == 0)
+    {
+        s_uart_guard_mutex = xSemaphoreCreateMutex();
+        if (s_uart_guard_mutex == 0)
+        {
+            return 0U;
+        }
+    }
+
+    wait_ticks = pdMS_TO_TICKS(timeout_ms);
+    if (timeout_ms != 0U && wait_ticks == 0U)
+    {
+        wait_ticks = 1U;
+    }
+
+    return (xSemaphoreTake(s_uart_guard_mutex, wait_ticks) == pdPASS) ? 1U : 0U;
+}
+
+void esp_host_uart_guard_unlock(void)
+{
+    if (esp_host_scheduler_running() == 0U || s_uart_guard_mutex == 0)
+    {
+        return;
+    }
+
+    (void)xSemaphoreGive(s_uart_guard_mutex);
+}
+
+static void esp_host_delay_poll_step(uint32_t *waited_us, uint32_t timeout_us)
+{
+    if (waited_us == 0)
+    {
+        return;
+    }
+
+    if (esp_host_scheduler_running() != 0U)
+    {
+        TickType_t delay_ticks = pdMS_TO_TICKS(1U);
+
+        if (delay_ticks == 0U)
+        {
+            delay_ticks = 1U;
+        }
+
+        vTaskDelay(delay_ticks);
+        *waited_us += 1000UL;
+        if (*waited_us > timeout_us)
+        {
+            *waited_us = timeout_us;
+        }
+        return;
+    }
+
+    delay_us(ESP_HOST_POLL_STEP_US);
+    *waited_us += ESP_HOST_POLL_STEP_US;
+}
 
 static uint16_t esp_host_crc16(const uint8_t *data, uint16_t length)
 {
@@ -120,8 +198,7 @@ static uint8_t esp_host_read_byte_timeout(uint8_t *byte, uint32_t timeout_ms)
             return 1U;
         }
 
-        delay_us(ESP_HOST_POLL_STEP_US);
-        waited_us += ESP_HOST_POLL_STEP_US;
+        esp_host_delay_poll_step(&waited_us, timeout_us);
     }
 
     return 0U;
@@ -280,6 +357,7 @@ static void esp_host_apply_status_bits(uint32_t status_bits)
     s_status.wifi_enabled = ((status_bits & OTA_HOST_STATUS_WIFI_ENABLED) != 0U) ? 1U : 0U;
     s_status.wifi_connected = ((status_bits & OTA_HOST_STATUS_WIFI_CONNECTED) != 0U) ? 1U : 0U;
     s_status.ble_enabled = ((status_bits & OTA_HOST_STATUS_BLE_ENABLED) != 0U) ? 1U : 0U;
+    s_status.mqtt_enabled = ((status_bits & OTA_HOST_STATUS_MQTT_ENABLED) != 0U) ? 1U : 0U;
     s_status.debug_screen_enabled = ((status_bits & OTA_HOST_STATUS_DEBUG_SCREEN_ENABLED) != 0U) ? 1U : 0U;
     s_status.remote_keys_enabled = ((status_bits & OTA_HOST_STATUS_REMOTE_KEYS_ENABLED) != 0U) ? 1U : 0U;
     s_status.has_credentials = ((status_bits & OTA_HOST_STATUS_HAS_CREDENTIALS) != 0U) ? 1U : 0U;
@@ -360,6 +438,10 @@ static void esp_host_update_cached_switch(uint8_t cmd, uint8_t enabled)
 
     case OTA_HOST_CMD_SET_BLE:
         s_status.ble_enabled = (enabled != 0U) ? 1U : 0U;
+        break;
+
+    case OTA_HOST_CMD_SET_MQTT:
+        s_status.mqtt_enabled = (enabled != 0U) ? 1U : 0U;
         break;
 
     default:
@@ -475,6 +557,11 @@ static uint8_t esp_host_exchange_payload(const uint8_t *request_payload,
         return 0U;
     }
 
+    if (esp_host_uart_guard_lock(ESP_HOST_UART_LOCK_TIMEOUT_MS) == 0U)
+    {
+        return 0U;
+    }
+
     seq = esp_host_next_seq();
     power_manager_acquire_lock(POWER_LOCK_ESP_HOST);
 
@@ -486,6 +573,7 @@ static uint8_t esp_host_exchange_payload(const uint8_t *request_payload,
         if (esp_host_send_frame(OTA_CTRL_MSG_HOST_REQ, seq, request_payload, request_len) == 0U)
         {
             power_manager_release_lock(POWER_LOCK_ESP_HOST);
+            esp_host_uart_guard_unlock();
             return 0U;
         }
 
@@ -509,6 +597,7 @@ static uint8_t esp_host_exchange_payload(const uint8_t *request_payload,
             esp_host_note_success();
             esp_host_inject_remote_key(frame.payload[2]);
             power_manager_release_lock(POWER_LOCK_ESP_HOST);
+            esp_host_uart_guard_unlock();
             return 1U;
         }
 
@@ -520,6 +609,7 @@ static uint8_t esp_host_exchange_payload(const uint8_t *request_payload,
     }
 
     power_manager_release_lock(POWER_LOCK_ESP_HOST);
+    esp_host_uart_guard_unlock();
     return 0U;
 }
 
@@ -636,6 +726,19 @@ uint8_t esp_host_set_ble_now(uint8_t enabled)
     }
 
     esp_host_update_cached_switch(OTA_HOST_CMD_SET_BLE, enabled);
+    return 1U;
+}
+
+uint8_t esp_host_set_mqtt_now(uint8_t enabled)
+{
+    uint8_t response[OTA_CTRL_HOST_PAYLOAD_LEN];
+
+    if (esp_host_command(OTA_HOST_CMD_SET_MQTT, enabled, response) == 0U)
+    {
+        return 0U;
+    }
+
+    esp_host_update_cached_switch(OTA_HOST_CMD_SET_MQTT, enabled);
     return 1U;
 }
 
@@ -762,6 +865,11 @@ void esp_host_set_wifi(uint8_t enabled)
 void esp_host_set_ble(uint8_t enabled)
 {
     (void)esp_host_set_ble_now(enabled);
+}
+
+void esp_host_set_mqtt(uint8_t enabled)
+{
+    (void)esp_host_set_mqtt_now(enabled);
 }
 
 void esp_host_set_debug_screen(uint8_t enabled)

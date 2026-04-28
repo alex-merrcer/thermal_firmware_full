@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "KEY.h"
+#include "MQTT.h"
 #include "UART.h"
 #include "WIFI.h"
 #include "app_service_bus.h"
@@ -43,6 +44,7 @@ static RTC_DATA_ATTR host_ctrl_rtc_ctx_t s_rtc_ctx;
 
 static uint8_t s_wifi_requested = 0U;
 static uint8_t s_ble_requested = 0U;
+static uint8_t s_mqtt_requested = 0U;
 static uint8_t s_ble_enabled = 0U;
 static uint8_t s_debug_screen_requested = 0U;
 static uint8_t s_debug_screen_visible = 0U;
@@ -259,13 +261,16 @@ static esp_err_t host_ctrl_ble_set_enabled(uint8_t enabled)
 
 static void host_ctrl_apply_requested_radios(void)
 {
+    uint8_t ota_running = ((app_service_bus_get_bits() & APP_EVENT_OTA_RUNNING) != 0U) ? 1U : 0U;
     uint8_t wifi_target = s_wifi_requested;
-    /* Keep BLE provisioning discoverable while the host stays active so the mini-program
-     * can reconnect and adjust Wi-Fi at any time, even after the device is already online. */
     uint8_t ble_target = (uint8_t)((s_ble_requested != 0U) ||
-                                   (wifi_service_has_credentials() != 0U) ||
-                                   (wifi_service_needs_provisioning() != 0U) ||
                                    (ble_provision_service_should_force_ble() != 0U));
+
+    if (ota_running != 0U)
+    {
+        wifi_target = 1U;
+        ble_target = 0U;
+    }
 
     if (wifi_service_is_enabled() != wifi_target)
     {
@@ -282,6 +287,8 @@ static void host_ctrl_apply_requested_radios(void)
             ESP_LOGW(TAG, "Failed to apply BLE request=%u", (unsigned int)ble_target);
         }
     }
+
+    mqtt_service_set_enabled(s_mqtt_requested);
 
     if (wifi_service_apply_host_power(s_power_policy, s_host_state) != ESP_OK)
     {
@@ -321,6 +328,8 @@ static void host_ctrl_prepare_sleep_runtime(void)
         }
     }
 
+    mqtt_service_set_enabled(0U);
+
     host_ctrl_apply_display(0U);
 }
 
@@ -339,6 +348,10 @@ static uint32_t host_ctrl_status_bits(void)
     if (s_ble_enabled != 0U)
     {
         bits |= OTA_HOST_STATUS_BLE_ENABLED;
+    }
+    if (mqtt_service_is_enabled() != 0U)
+    {
+        bits |= OTA_HOST_STATUS_MQTT_ENABLED;
     }
     if (s_debug_screen_requested != 0U)
     {
@@ -546,6 +559,11 @@ static void host_ctrl_request_manual_sleep(host_ctrl_sleep_mode_t mode)
 
 static void host_ctrl_maybe_enter_sleep(void)
 {
+    if ((app_service_bus_get_bits() & APP_EVENT_OTA_RUNNING) != 0U)
+    {
+        return;
+    }
+
     if (host_ctrl_is_awake_hold_active() != 0U)
     {
         return;
@@ -595,7 +613,13 @@ static uint8_t host_ctrl_handle_command(uint8_t cmd, const uint8_t *payload, uin
 
     case OTA_HOST_CMD_SET_BLE:
         s_ble_requested = (arg0 != 0U) ? 1U : 0U;
-        return (host_ctrl_ble_set_enabled(s_ble_requested) == ESP_OK) ? OTA_HOST_RESULT_OK : OTA_HOST_RESULT_FAILED;
+        host_ctrl_apply_runtime_state();
+        return OTA_HOST_RESULT_OK;
+
+    case OTA_HOST_CMD_SET_MQTT:
+        s_mqtt_requested = (arg0 != 0U) ? 1U : 0U;
+        host_ctrl_apply_runtime_state();
+        return OTA_HOST_RESULT_OK;
 
     case OTA_HOST_CMD_SET_DEBUG_SCREEN:
         s_debug_screen_requested = (arg0 != 0U) ? 1U : 0U;
@@ -655,6 +679,7 @@ void host_ctrl_service_init(void)
 
     s_wifi_requested = 0U;
     s_ble_requested = 0U;
+    s_mqtt_requested = 0U;
     s_ble_enabled = 0U;
     s_debug_screen_requested = 0U;
     s_debug_screen_visible = 0U;

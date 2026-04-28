@@ -1,6 +1,13 @@
 #include "ota_stm32_manifest.h"
 
+#include "WIFI.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #define TAG OTA_STM32_TAG
+#define OTA_METADATA_FETCH_RETRY_COUNT 3U
+#define OTA_METADATA_RETRY_DELAY_MS    1500U
+#define OTA_METADATA_WIFI_WAIT_MS      12000U
 
 static void latest_manifest_free(ota_latest_json_t *latest)
 {
@@ -10,6 +17,53 @@ static void latest_manifest_free(ota_latest_json_t *latest)
 
     free(latest->signature);
     memset(latest, 0, sizeof(*latest));
+}
+
+static bool ota_wait_for_wifi_connected(uint32_t timeout_ms)
+{
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+
+    while ((xTaskGetTickCount() - start) < timeout_ticks) {
+        if (wifi_service_is_connected() != 0U) {
+            return true;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100U));
+    }
+
+    return (wifi_service_is_connected() != 0U);
+}
+
+static bool ota_download_latest_manifest_with_retries(const char *metadata_url,
+                                                      ota_blob_t *latest_blob)
+{
+    uint8_t attempt = 0U;
+
+    for (attempt = 0U; attempt < OTA_METADATA_FETCH_RETRY_COUNT; ++attempt) {
+        if (!ota_wait_for_wifi_connected(OTA_METADATA_WIFI_WAIT_MS)) {
+            ESP_LOGW(TAG,
+                     "WiFi is not connected before manifest fetch attempt %u/%u",
+                     (unsigned int)(attempt + 1U),
+                     (unsigned int)OTA_METADATA_FETCH_RETRY_COUNT);
+        } else if (download_text_blob(metadata_url,
+                                      latest_blob,
+                                      OTA_METADATA_MAX_SIZE,
+                                      "release-manifest.v2.json")) {
+            return true;
+        }
+
+        if (attempt + 1U < OTA_METADATA_FETCH_RETRY_COUNT) {
+            ESP_LOGW(TAG,
+                     "Manifest fetch attempt %u/%u failed, retry after %u ms",
+                     (unsigned int)(attempt + 1U),
+                     (unsigned int)OTA_METADATA_FETCH_RETRY_COUNT,
+                     (unsigned int)OTA_METADATA_RETRY_DELAY_MS);
+            vTaskDelay(pdMS_TO_TICKS(OTA_METADATA_RETRY_DELAY_MS));
+        }
+    }
+
+    return false;
 }
 
 bool ota_parse_semver(const char *text, ota_semver_t *version)
@@ -502,7 +556,7 @@ bool ota_prepare_upgrade_plan(const ota_upgrade_request_t *request,
         return false;
     }
 
-    if (!download_text_blob(metadata_url, &latest_blob, OTA_METADATA_MAX_SIZE, "release-manifest.v2.json")) {
+    if (!ota_download_latest_manifest_with_retries(metadata_url, &latest_blob)) {
         *reject_reason = OTA_CTRL_ERR_FETCH_METADATA;
         goto cleanup;
     }

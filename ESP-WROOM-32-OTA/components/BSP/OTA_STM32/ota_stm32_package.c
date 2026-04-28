@@ -1,7 +1,11 @@
 #include "ota_stm32_package.h"
+#include "WIFI.h"
 
 #define TAG OTA_STM32_TAG
 #define OTA_CACHE_ERASE_CHUNK_SIZE (64U * 1024U)
+#define OTA_PACKAGE_FETCH_RETRY_COUNT 3U
+#define OTA_PACKAGE_RETRY_DELAY_MS    1500U
+#define OTA_PACKAGE_WIFI_WAIT_MS      12000U
 
 static size_t ota_align_up_size(size_t value, size_t align)
 {
@@ -48,6 +52,22 @@ static bool ota_partition_erase_chunked(const esp_partition_t *partition,
     }
 
     return true;
+}
+
+static bool ota_wait_for_wifi_connected(uint32_t timeout_ms)
+{
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+
+    while ((xTaskGetTickCount() - start) < timeout_ticks) {
+        if (wifi_service_is_connected() != 0U) {
+            return true;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100U));
+    }
+
+    return (wifi_service_is_connected() != 0U);
 }
 
 void blob_free(ota_blob_t *blob)
@@ -520,7 +540,7 @@ static bool zip_extract_entry(const ota_blob_t *package_blob,
     return true;
 }
 
-bool download_iap_package(const char *url, ota_blob_t *package_blob)
+static bool download_iap_package_once(const char *url, ota_blob_t *package_blob)
 {
     const esp_partition_t *partition =
         esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
@@ -665,6 +685,47 @@ cleanup:
     esp_http_client_close(client);
     esp_http_client_cleanup(client);
     return ok;
+}
+
+bool download_iap_package(const char *url, ota_blob_t *package_blob)
+{
+    uint8_t attempt = 0U;
+
+    if (url == NULL || package_blob == NULL) {
+        return false;
+    }
+
+    blob_free(package_blob);
+
+    for (attempt = 0U; attempt < OTA_PACKAGE_FETCH_RETRY_COUNT; ++attempt) {
+        if (!ota_wait_for_wifi_connected(OTA_PACKAGE_WIFI_WAIT_MS)) {
+            ESP_LOGW(TAG,
+                     "WiFi is not connected before package fetch attempt %u/%u",
+                     (unsigned int)(attempt + 1U),
+                     (unsigned int)OTA_PACKAGE_FETCH_RETRY_COUNT);
+        } else {
+            ESP_LOGI(TAG,
+                     "Package fetch attempt %u/%u: %s",
+                     (unsigned int)(attempt + 1U),
+                     (unsigned int)OTA_PACKAGE_FETCH_RETRY_COUNT,
+                     url);
+            if (download_iap_package_once(url, package_blob)) {
+                return true;
+            }
+        }
+
+        blob_free(package_blob);
+        if (attempt + 1U < OTA_PACKAGE_FETCH_RETRY_COUNT) {
+            ESP_LOGW(TAG,
+                     "Package fetch attempt %u/%u failed, retry after %u ms",
+                     (unsigned int)(attempt + 1U),
+                     (unsigned int)OTA_PACKAGE_FETCH_RETRY_COUNT,
+                     (unsigned int)OTA_PACKAGE_RETRY_DELAY_MS);
+            vTaskDelay(pdMS_TO_TICKS(OTA_PACKAGE_RETRY_DELAY_MS));
+        }
+    }
+
+    return false;
 }
 
 bool extract_iap_package(ota_iap_context_t *context)

@@ -14,12 +14,14 @@
 #define DEVICE_SETTINGS_FLAG_LOW_POWER_ENABLED         (1UL << 5)
 #define DEVICE_SETTINGS_FLAG_STANDBY_ENABLED           (1UL << 6)
 #define DEVICE_SETTINGS_FLAG_THERMAL_PAUSE_SEND_ESP    (1UL << 7)
+#define DEVICE_SETTINGS_FLAG_MQTT_ENABLED              (1UL << 8)
 
 #define DEVICE_SETTINGS_BLOB_MAGIC                     0x44535447UL
 #define DEVICE_SETTINGS_BLOB_VERSION_V1                1U
 #define DEVICE_SETTINGS_BLOB_VERSION_V2                2U
 #define DEVICE_SETTINGS_BLOB_VERSION_V3                3U
-#define DEVICE_SETTINGS_BLOB_VERSION                   4U
+#define DEVICE_SETTINGS_BLOB_VERSION_V4                4U
+#define DEVICE_SETTINGS_BLOB_VERSION                   5U
 #define DEVICE_SETTINGS_DEFAULT_SCREEN_OFF_TIMEOUT_MS  180000UL
 #define DEVICE_SETTINGS_DEFAULT_POWER_POLICY           POWER_POLICY_BALANCED
 #define DEVICE_SETTINGS_DEFAULT_RTC_STOP_WAKE_MS       5000UL
@@ -30,6 +32,7 @@ typedef struct
 {
     uint8_t wifi_enabled;
     uint8_t ble_enabled;
+    uint8_t mqtt_enabled;
     uint8_t debug_mode_enabled;
     uint8_t esp32_debug_screen_enabled;
     uint8_t esp32_remote_keys_enabled;

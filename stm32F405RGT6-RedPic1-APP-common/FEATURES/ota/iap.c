@@ -4,15 +4,19 @@
 #include "flash_if.h"
 #include "common.h"
 #include "ota_ctrl_protocol.h"
+#include "esp_host_service_priv.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <string.h>
 
 #define APP_OTA_REQ_FLAG_BASE       0x00000003UL
 #define APP_OTA_DEVICE_PRODUCT_ID   "LCD"
 #define APP_OTA_DEVICE_HW_REV       "A1"
 #define APP_OTA_DEFAULT_VERSION     "0.0.0"
-#define APP_OTA_REQ_RETRY_COUNT     3U
-#define APP_OTA_ACK_TIMEOUT_MS      5000U
-#define APP_OTA_READY_TIMEOUT_MS    30000U
+#define APP_OTA_REQ_RETRY_COUNT     2U
+#define APP_OTA_ACK_TIMEOUT_MS      12000U
+#define APP_OTA_READY_TIMEOUT_MS    12000U
+#define APP_OTA_UART_LOCK_TIMEOUT_MS 60000U
 #define APP_OTA_FRAME_WAIT_MS       500U
 #define APP_OTA_POLL_STEP_US        50U
 #define APP_OTA_STM32_UID_BASE_ADDR 0x1FFF7A10U
@@ -26,6 +30,40 @@ typedef struct
 } app_ota_ctrl_frame_t;
 
 static uint8_t s_app_ota_ctrl_seq = 1U;
+
+static uint8_t app_ota_scheduler_running(void)
+{
+    return (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING) ? 1U : 0U;
+}
+
+static void app_ota_delay_poll_step(uint32_t *waited_us, uint32_t timeout_us)
+{
+    if (waited_us == 0)
+    {
+        return;
+    }
+
+    if (app_ota_scheduler_running() != 0U)
+    {
+        TickType_t delay_ticks = pdMS_TO_TICKS(1U);
+
+        if (delay_ticks == 0U)
+        {
+            delay_ticks = 1U;
+        }
+
+        vTaskDelay(delay_ticks);
+        *waited_us += 1000UL;
+        if (*waited_us > timeout_us)
+        {
+            *waited_us = timeout_us;
+        }
+        return;
+    }
+
+    delay_us(APP_OTA_POLL_STEP_US);
+    *waited_us += APP_OTA_POLL_STEP_US;
+}
 
 static uint8_t app_ota_version_is_valid(const char *version)
 {
@@ -180,8 +218,7 @@ static uint8_t app_ota_read_byte_timeout(uint8_t *byte, uint32_t timeout_ms)
             return 1U;
         }
 
-        delay_us(APP_OTA_POLL_STEP_US);
-        waited_us += APP_OTA_POLL_STEP_US;
+        app_ota_delay_poll_step(&waited_us, timeout_us);
     }
 
     return 0U;
@@ -382,6 +419,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
     uint8_t ack_received = 0U;
     uint8_t req_seq = 0U;
     uint8_t retry = 0U;
+    uint8_t result = 0U;
     uint32_t waited_ms = 0U;
 
     if (reject_reason != 0)
@@ -401,6 +439,17 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
         return 0U;
     }
 
+    if (esp_host_uart_guard_lock(APP_OTA_UART_LOCK_TIMEOUT_MS) == 0U)
+    {
+        if (reject_reason != 0)
+        {
+            *reject_reason = OTA_CTRL_ERR_BUSY;
+        }
+        return 0U;
+    }
+
+    app_ota_flush_uart();
+    delay_ms(12U);
     app_ota_flush_uart();
     req_seq = app_ota_next_seq();
 
@@ -408,7 +457,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
     {
         if (!app_ota_send_frame(OTA_CTRL_MSG_REQ, req_seq, payload, payload_len))
         {
-            return 0U;
+            goto cleanup;
         }
 
         if (app_ota_receive_frame(&frame, APP_OTA_ACK_TIMEOUT_MS))
@@ -426,7 +475,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
                 {
                     *reject_reason = app_ota_read_u16le(&frame.payload[4]);
                 }
-                return 0U;
+                goto cleanup;
             }
 
             if (frame.msg_type == OTA_CTRL_MSG_READY &&
@@ -438,7 +487,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
                     {
                         *reject_reason = OTA_CTRL_ERR_PARTITION;
                     }
-                    return 0U;
+                    goto cleanup;
                 }
 
                 if (app_ota_extract_ready_version(&frame, latest_version, latest_version_len) == 0U)
@@ -447,10 +496,11 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
                     {
                         *reject_reason = OTA_CTRL_ERR_VERSION;
                     }
-                    return 0U;
+                    goto cleanup;
                 }
 
-                return 1U;
+                result = 1U;
+                goto cleanup;
             }
 
             if (frame.msg_type == OTA_CTRL_MSG_ERROR &&
@@ -460,7 +510,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
                 {
                     *reject_reason = app_ota_read_u16le(&frame.payload[2]);
                 }
-                return 0U;
+                goto cleanup;
             }
 
             if (frame.msg_type == OTA_CTRL_MSG_STATUS &&
@@ -472,11 +522,16 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
         }
 
         ++retry;
+        if (retry < APP_OTA_REQ_RETRY_COUNT)
+        {
+            delay_ms(20U);
+            app_ota_flush_uart();
+        }
     }
 
     if (!ack_received)
     {
-        return 0U;
+        goto cleanup;
     }
 
     while (waited_ms < APP_OTA_READY_TIMEOUT_MS)
@@ -500,7 +555,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
             {
                 *reject_reason = app_ota_read_u16le(&frame.payload[2]);
             }
-            return 0U;
+            goto cleanup;
         }
 
         if (frame.msg_type == OTA_CTRL_MSG_READY &&
@@ -512,7 +567,7 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
                 {
                     *reject_reason = OTA_CTRL_ERR_PARTITION;
                 }
-                return 0U;
+                goto cleanup;
             }
 
             if (app_ota_extract_ready_version(&frame, latest_version, latest_version_len) == 0U)
@@ -521,14 +576,15 @@ uint8_t iap_query_latest_version(const BootInfoTypeDef *boot_info,
                 {
                     *reject_reason = OTA_CTRL_ERR_VERSION;
                 }
-                return 0U;
+                goto cleanup;
             }
 
-            return 1U;
+            result = 1U;
+            goto cleanup;
         }
     }
 
-    return 0U;
+cleanup:
+    esp_host_uart_guard_unlock();
+    return result;
 }
-
-

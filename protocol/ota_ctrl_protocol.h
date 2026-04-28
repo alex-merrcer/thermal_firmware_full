@@ -139,6 +139,7 @@ extern "C" {
 #define OTA_HOST_CMD_SET_POWER_POLICY      0x07U
 #define OTA_HOST_CMD_SET_HOST_STATE        0x08U
 #define OTA_HOST_CMD_SEND_THERMAL_SNAPSHOT 0x09U
+#define OTA_HOST_CMD_SET_MQTT              0x0AU
 
 #define OTA_HOST_RESULT_OK                 0x00U
 #define OTA_HOST_RESULT_UNSUPPORTED        0x01U
@@ -152,6 +153,7 @@ extern "C" {
 #define OTA_HOST_STATUS_REMOTE_KEYS_ENABLED    (1UL << 4)
 #define OTA_HOST_STATUS_HAS_CREDENTIALS        (1UL << 5)
 #define OTA_HOST_STATUS_READY_FOR_SLEEP        (1UL << 6)
+#define OTA_HOST_STATUS_MQTT_ENABLED           (1UL << 7)
 
 #define OTA_HOST_REMOTE_KEY_NONE           0x00U
 #define OTA_HOST_REMOTE_KEY_1              0x01U

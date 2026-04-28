@@ -11,6 +11,7 @@ void esp_host_step(void);
 uint8_t esp_host_refresh_status(void);
 uint8_t esp_host_set_wifi_now(uint8_t enabled, uint32_t wait_connected_ms);
 uint8_t esp_host_set_ble_now(uint8_t enabled);
+uint8_t esp_host_set_mqtt_now(uint8_t enabled);
 uint8_t esp_host_set_debug_screen_now(uint8_t enabled);
 uint8_t esp_host_set_remote_keys_now(uint8_t enabled);
 uint8_t esp_host_set_power_policy_now(power_policy_t policy);
@@ -23,7 +24,10 @@ uint8_t esp_host_send_thermal_snapshot_x10(int16_t min_temp_x10,
                                            int16_t center_temp_x10);
 void esp_host_set_wifi(uint8_t enabled);
 void esp_host_set_ble(uint8_t enabled);
+void esp_host_set_mqtt(uint8_t enabled);
 void esp_host_set_debug_screen(uint8_t enabled);
 void esp_host_set_remote_keys(uint8_t enabled);
+uint8_t esp_host_uart_guard_lock(uint32_t timeout_ms);
+void esp_host_uart_guard_unlock(void);
 
 #endif

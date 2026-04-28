@@ -82,6 +82,10 @@
 #define APP_ESP_RESUME_SYNC_DELAY_MS   20UL
 #define APP_ESP_RESUME_SYNC_RETRY_MS   150UL
 #define APP_ESP_RESUME_SYNC_MAX_TRIES  6U
+#define APP_OTA_QUERY_SYNC_DRAIN_MS    1800UL
+#define APP_OTA_QUERY_SYNC_RETRY_MS    20UL
+
+#define APP_RSP_VALUE_OTA_SYNC_PENDING 1UL
 
 #define APP_EG_BIT_THERMAL_ACTIVE      (1UL << 0)
 #define APP_EG_BIT_SCREEN_OFF          (1UL << 1)
@@ -154,6 +158,7 @@ static void app_apply_persisted_settings(void);
 static void app_force_manual_wifi_boot(void);
 static uint8_t app_service_execute_command(const app_service_cmd_t *cmd, app_service_rsp_t *rsp);
 static void app_service_poll_background(uint32_t now_ms);
+static uint8_t app_service_drain_esp_sync(uint32_t timeout_ms);
 static void app_ui_push_key(uint8_t key_value);
 static void app_ui_notify_task(void);
 static void app_thermal_notify_task(void);
@@ -417,6 +422,8 @@ static EventBits_t app_service_cmd_busy_bits(app_service_cmd_id_t cmd_id)
     switch (cmd_id)
     {
     case APP_SERVICE_CMD_SET_WIFI:
+    case APP_SERVICE_CMD_SET_BLE:
+    case APP_SERVICE_CMD_SET_MQTT:
     case APP_SERVICE_CMD_SET_DEBUG_SCREEN:
     case APP_SERVICE_CMD_SET_REMOTE_KEYS:
     case APP_SERVICE_CMD_ESP_REFRESH_STATUS:
@@ -466,6 +473,14 @@ static uint8_t app_service_execute_command(const app_service_cmd_t *cmd, app_ser
         ok = esp_host_set_wifi_now(cmd->arg0, cmd->value);
         break;
 
+    case APP_SERVICE_CMD_SET_BLE:
+        ok = esp_host_set_ble_now(cmd->arg0);
+        break;
+
+    case APP_SERVICE_CMD_SET_MQTT:
+        ok = esp_host_set_mqtt_now(cmd->arg0);
+        break;
+
     case APP_SERVICE_CMD_SET_DEBUG_SCREEN:
         ok = esp_host_set_debug_screen_now(cmd->arg0);
         break;
@@ -509,6 +524,12 @@ static uint8_t app_service_execute_command(const app_service_cmd_t *cmd, app_ser
 
     case APP_SERVICE_CMD_OTA_QUERY_LATEST:
         memset(latest_version, 0, sizeof(latest_version));
+        if (app_service_drain_esp_sync(APP_OTA_QUERY_SYNC_DRAIN_MS) == 0U)
+        {
+            rsp->reason = OTA_CTRL_ERR_BUSY;
+            rsp->value = APP_RSP_VALUE_OTA_SYNC_PENDING;
+            break;
+        }
         power_manager_acquire_lock(POWER_LOCK_OTA);
         ok = ota_service_query_latest_version(latest_version,
                                               sizeof(latest_version),
@@ -713,6 +734,31 @@ static void app_service_poll_background(uint32_t now_ms)
                                         APP_ESP_RESUME_SYNC_DELAY_MS,
                                         APP_ESP_RESUME_SYNC_RETRY_MS,
                                         APP_ESP_RESUME_SYNC_MAX_TRIES);
+}
+
+static uint8_t app_service_drain_esp_sync(uint32_t timeout_ms)
+{
+    uint32_t start_ms = power_manager_get_tick_ms();
+
+    while (esp_sync_service_is_pending() != 0U)
+    {
+        uint32_t now_ms = power_manager_get_tick_ms();
+
+        esp_sync_service_step(now_ms);
+        if (esp_sync_service_is_pending() == 0U)
+        {
+            return 1U;
+        }
+
+        if ((now_ms - start_ms) >= timeout_ms)
+        {
+            return 0U;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(APP_OTA_QUERY_SYNC_RETRY_MS));
+    }
+
+    return 1U;
 }
 
 /* UI 任务在每次 step 前统一同步活跃页与 thermal 任务联动状态。 */

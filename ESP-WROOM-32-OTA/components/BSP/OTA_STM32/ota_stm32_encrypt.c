@@ -2,11 +2,9 @@
 
 #define TAG OTA_STM32_TAG
 
-#if defined(__has_include)
 #if __has_include("ota_security_secrets.h")
 #include "ota_security_secrets.h"
 #define OTA_HAS_EXTERNAL_AES_KEY   (1)
-#endif
 #endif
 
 #if defined(OTA_HAS_EXTERNAL_AES_KEY)

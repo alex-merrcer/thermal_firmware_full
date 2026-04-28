@@ -389,6 +389,7 @@ bool ota_ctrl_receive_frame(ota_ctrl_frame_t *frame, uint32_t timeout_ms)
             crc_calc = ota_ctrl_crc16(crc_buffer, (uint16_t)(sizeof(header) + frame->payload_len));
             if (crc_recv != crc_calc) {
                 ESP_LOGW(TAG, "Control frame CRC mismatch");
+                ota_ctrl_flush_uart();
                 continue;
             }
         }

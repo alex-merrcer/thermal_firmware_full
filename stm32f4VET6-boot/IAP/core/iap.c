@@ -427,6 +427,7 @@ void iap_main(void)
     iap_ui_show_upgrade_prepare();
 
     boot_info_load(&boot_info);
+    iap_show_version_lines(&boot_info);
     txn_load_with_diag(&txn, &txn_load_diag);
     iap_serial_report_txn_load(&txn, &txn_load_diag);
     current_boot_info = boot_info;

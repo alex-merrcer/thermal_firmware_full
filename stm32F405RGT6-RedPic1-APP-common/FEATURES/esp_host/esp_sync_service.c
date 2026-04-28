@@ -141,6 +141,10 @@ static uint8_t esp_sync_service_sync_now(void)
     {
         return 0U;
     }
+    if (esp_host_set_mqtt_now(settings.mqtt_enabled) == 0U)
+    {
+        return 0U;
+    }
 
     return 1U;
 }

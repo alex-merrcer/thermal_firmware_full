@@ -3,10 +3,18 @@
 #include "OTA_STM32.h"
 #include "WIFI.h"
 #include "app_service_bus.h"
+#include "host_ctrl_service.h"
 #include "ota_stm32_internal.h"
 
 static const char *TAG = "OTA_SERVICE";
+#define OTA_REQUEST_DEDUP_WINDOW_MS 60000U
+
 static TaskHandle_t s_ota_task_handle = NULL;
+static uint8_t s_last_request_seq = 0U;
+static uint8_t s_last_request_seq_valid = 0U;
+static uint16_t s_last_request_payload_len = 0U;
+static uint8_t s_last_request_payload[OTA_CTRL_MAX_PAYLOAD_LEN] = {0};
+static TickType_t s_last_request_tick = 0U;
 
 static void ota_service_report_cloud_status(uint8_t stage,
                                             uint8_t percent,
@@ -41,6 +49,66 @@ static void ota_service_send_error(uint8_t seq, uint8_t stage, uint16_t error_co
 {
     ota_service_report_cloud_status(stage, OTA_CTRL_PERCENT_UNKNOWN, error_code, 0U, 0U);
     (void)ota_ctrl_send_error(seq, stage, error_code);
+}
+
+static void ota_service_begin_request_guard(void)
+{
+    app_service_bus_set_bits(APP_EVENT_OTA_RUNNING);
+    if (wifi_service_set_ota_guard(1U) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Enable WiFi OTA guard failed");
+    }
+    host_ctrl_service_request_runtime_apply();
+    /* Apply OTA runtime radio policy immediately so BLE/coexist state is settled
+     * before the following HTTPS package fetch starts. */
+    host_ctrl_service_step();
+}
+
+static void ota_service_end_request_guard(void)
+{
+    if (wifi_service_set_ota_guard(0U) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Disable WiFi OTA guard failed");
+    }
+    host_ctrl_service_request_runtime_apply();
+    app_service_bus_clear_bits(APP_EVENT_OTA_RUNNING);
+}
+
+static bool ota_service_is_duplicate_request(const ota_ctrl_frame_t *frame)
+{
+    TickType_t now = xTaskGetTickCount();
+
+    if (frame == NULL ||
+        s_last_request_seq_valid == 0U ||
+        s_last_request_seq != frame->seq ||
+        s_last_request_payload_len != frame->payload_len)
+    {
+        return false;
+    }
+
+    if (memcmp(s_last_request_payload, frame->payload, frame->payload_len) != 0)
+    {
+        return false;
+    }
+
+    return ((now - s_last_request_tick) < pdMS_TO_TICKS(OTA_REQUEST_DEDUP_WINDOW_MS));
+}
+
+static void ota_service_note_request(const ota_ctrl_frame_t *frame)
+{
+    if (frame == NULL)
+    {
+        return;
+    }
+
+    s_last_request_seq = frame->seq;
+    s_last_request_seq_valid = 1U;
+    s_last_request_payload_len = frame->payload_len;
+    if (frame->payload_len != 0U)
+    {
+        memcpy(s_last_request_payload, frame->payload, frame->payload_len);
+    }
+    s_last_request_tick = xTaskGetTickCount();
 }
 
 static void log_task_stack_watermark(const char *stage)
@@ -375,21 +443,32 @@ static void ota_service_task(void *arg)
     (void)arg;
 
     ESP_LOGI(TAG, "OTA service task start");
+    ota_ctrl_flush_uart();
+    host_ctrl_service_init();
 
     while (true)
     {
-        QueueHandle_t ota_queue = app_service_bus_ota_frame_queue();
         ota_ctrl_frame_t frame = {0};
         ota_upgrade_request_t request = {0};
         ota_upgrade_plan_t plan = {0};
         size_t cached_package_size = 0U;
         bool have_cached_plan = false;
+        bool request_guard_active = false;
         uint8_t req_seq = 0U;
         uint16_t validation_error = 0U;
 
-        if (ota_queue == NULL ||
-            xQueueReceive(ota_queue, &frame, pdMS_TO_TICKS(OTA_CTRL_SERVICE_IDLE_MS)) != pdTRUE)
+        host_ctrl_service_step();
+
+        if (!ota_ctrl_receive_frame(&frame, OTA_CTRL_SERVICE_IDLE_MS))
         {
+            continue;
+        }
+
+        app_service_bus_set_bits(APP_EVENT_STM32_ONLINE);
+
+        if (frame.msg_type == OTA_CTRL_MSG_HOST_REQ)
+        {
+            (void)host_ctrl_service_handle_frame(&frame);
             continue;
         }
 
@@ -406,6 +485,22 @@ static void ota_service_task(void *arg)
         req_seq = frame.seq;
         ota_ctrl_log_request_event("RX", frame.seq, &request);
 
+        if (ota_service_is_duplicate_request(&frame))
+        {
+            ESP_LOGW(TAG, "Drop duplicate OTA request seq=%u within dedupe window", (unsigned int)req_seq);
+            ota_ctrl_send_ack(req_seq, &request, false, OTA_CTRL_ERR_BUSY);
+            ota_service_report_cloud_status(OTA_CTRL_STAGE_QUERY,
+                                            OTA_CTRL_PERCENT_UNKNOWN,
+                                            OTA_CTRL_ERR_BUSY,
+                                            0U,
+                                            0U);
+            continue;
+        }
+
+        ota_service_note_request(&frame);
+        ota_service_begin_request_guard();
+        request_guard_active = true;
+
         validation_error = ota_ctrl_validate_request(&request);
         if (validation_error != 0U)
         {
@@ -415,7 +510,7 @@ static void ota_service_task(void *arg)
                                             validation_error,
                                             0U,
                                             0U);
-            continue;
+            goto request_cleanup;
         }
 
         if (!ota_request_is_check_only(&request) && !ota_aes_runtime_ready())
@@ -427,7 +522,7 @@ static void ota_service_task(void *arg)
                                             OTA_CTRL_ERR_AES,
                                             0U,
                                             0U);
-            continue;
+            goto request_cleanup;
         }
 
         if (wifi_service_is_enabled() == 0U)
@@ -441,7 +536,7 @@ static void ota_service_task(void *arg)
                                                 OTA_CTRL_ERR_NO_WIFI,
                                                 0U,
                                                 0U);
-                continue;
+                goto request_cleanup;
             }
         }
 
@@ -460,14 +555,18 @@ static void ota_service_task(void *arg)
                                                 validation_error,
                                                 0U,
                                                 0U);
-                continue;
+                goto request_cleanup;
             }
         }
 
         ota_ctrl_send_ack(req_seq, &request, true, 0U);
-        app_service_bus_set_bits(APP_EVENT_OTA_RUNNING);
         ota_process_request(&request, &plan, req_seq, have_cached_plan, cached_package_size);
-        app_service_bus_clear_bits(APP_EVENT_OTA_RUNNING);
+
+request_cleanup:
+        if (request_guard_active)
+        {
+            ota_service_end_request_guard();
+        }
     }
 }
 

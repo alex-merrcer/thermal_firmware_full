@@ -72,6 +72,7 @@ static void settings_service_load_defaults(device_settings_t *settings)
     memset(settings, 0, sizeof(*settings));
     settings->wifi_enabled = 0U;
     settings->ble_enabled = 0U;
+    settings->mqtt_enabled = 0U;
     settings->debug_mode_enabled = 0U;
     settings->esp32_debug_screen_enabled = 0U;
     settings->esp32_remote_keys_enabled = 0U;
@@ -93,6 +94,7 @@ static void settings_service_sanitize(device_settings_t *settings)
 
     settings->wifi_enabled = (settings->wifi_enabled != 0U) ? 1U : 0U;
     settings->ble_enabled = (settings->ble_enabled != 0U) ? 1U : 0U;
+    settings->mqtt_enabled = (settings->mqtt_enabled != 0U) ? 1U : 0U;
     settings->debug_mode_enabled = (settings->debug_mode_enabled != 0U) ? 1U : 0U;
     settings->esp32_debug_screen_enabled = (settings->esp32_debug_screen_enabled != 0U) ? 1U : 0U;
     settings->esp32_remote_keys_enabled = (settings->esp32_remote_keys_enabled != 0U) ? 1U : 0U;
@@ -165,6 +167,10 @@ static void settings_blob_from_settings(device_settings_blob_t *blob,
     {
         flags |= DEVICE_SETTINGS_FLAG_THERMAL_PAUSE_SEND_ESP;
     }
+    if (settings->mqtt_enabled != 0U)
+    {
+        flags |= DEVICE_SETTINGS_FLAG_MQTT_ENABLED;
+    }
 
     blob->magic = DEVICE_SETTINGS_BLOB_MAGIC;
     blob->version = DEVICE_SETTINGS_BLOB_VERSION;
@@ -186,6 +192,7 @@ static uint8_t settings_blob_is_valid(const device_settings_blob_t *blob)
 
     if (blob->magic != DEVICE_SETTINGS_BLOB_MAGIC ||
         (blob->version != DEVICE_SETTINGS_BLOB_VERSION &&
+         blob->version != DEVICE_SETTINGS_BLOB_VERSION_V4 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V3 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V2 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V1) ||
@@ -206,6 +213,7 @@ static void settings_from_blob(device_settings_t *settings, const device_setting
 
     settings->wifi_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_WIFI_ENABLED) != 0U) ? 1U : 0U;
     settings->ble_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_BLE_ENABLED) != 0U) ? 1U : 0U;
+    settings->mqtt_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_MQTT_ENABLED) != 0U) ? 1U : 0U;
     settings->debug_mode_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_DEBUG_MODE_ENABLED) != 0U) ? 1U : 0U;
     settings->esp32_debug_screen_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_ESP32_DEBUG_SCREEN) != 0U) ? 1U : 0U;
     settings->esp32_remote_keys_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_ESP32_REMOTE_KEYS) != 0U) ? 1U : 0U;
@@ -225,7 +233,7 @@ static void settings_from_blob(device_settings_t *settings, const device_setting
             POWER_POLICY_PERFORMANCE;
     }
 
-    if (blob->version >= DEVICE_SETTINGS_BLOB_VERSION)
+    if (blob->version >= DEVICE_SETTINGS_BLOB_VERSION_V4)
     {
         settings->standby_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_STANDBY_ENABLED) != 0U) ? 1U : 0U;
         settings->rtc_stop_wake_ms = blob->rtc_stop_wake_ms;
@@ -253,16 +261,22 @@ void settings_service_init(void)
     if (settings_blob_is_valid(&blob) != 0U)
     {
         settings_from_blob(&s_settings, &blob);
-        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION)
+        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION_V4)
         {
             /* V4 aligns the shipped product behavior: KEY2 pause-send is enabled by default. */
             s_settings.thermal_pause_send_esp_enabled = 1U;
             should_resave = 1U;
         }
-        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION &&
+        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION_V4 &&
             s_settings.screen_off_timeout_ms == SETTINGS_TIMEOUT_LEGACY_DEFAULT_MS)
         {
             s_settings.screen_off_timeout_ms = DEVICE_SETTINGS_DEFAULT_SCREEN_OFF_TIMEOUT_MS;
+            should_resave = 1U;
+        }
+        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION)
+        {
+            /* V5 adds user-controlled cloud connectivity; keep it disabled by default. */
+            s_settings.mqtt_enabled = 0U;
             should_resave = 1U;
         }
         if (blob.version != DEVICE_SETTINGS_BLOB_VERSION)

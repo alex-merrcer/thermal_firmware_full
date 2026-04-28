@@ -37,6 +37,8 @@ extern bool MQTT_OTA;
 
 esp_err_t mqtt_service_init(void);
 void mqtt_service_step(void);
+void mqtt_service_set_enabled(uint8_t enabled);
+uint8_t mqtt_service_is_enabled(void);
 esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
                                                    int16_t max_temp_x10,
                                                    int16_t center_temp_x10);

@@ -22,6 +22,7 @@ static uint8_t s_wifi_connected = 0U;
 static uint8_t s_wifi_power_policy = OTA_HOST_POWER_POLICY_BALANCED;
 static uint8_t s_host_state = OTA_HOST_STATE_ACTIVE;
 static uint8_t s_wifi_netif_created = 0U;
+static uint8_t s_wifi_ota_guard = 0U;
 
 static const char *wifi_service_config_source_text(void)
 {
@@ -114,7 +115,11 @@ static esp_err_t wifi_service_apply_ps_mode(void)
         return ESP_OK;
     }
 
-    if (s_wifi_power_policy == OTA_HOST_POWER_POLICY_PERFORMANCE)
+    if (s_wifi_ota_guard != 0U)
+    {
+        ps_type = WIFI_PS_NONE;
+    }
+    else if (s_wifi_power_policy == OTA_HOST_POWER_POLICY_PERFORMANCE)
     {
         ps_type = WIFI_PS_NONE;
     }
@@ -251,6 +256,12 @@ esp_err_t wifi_service_set_enabled(uint8_t enabled)
         return ESP_OK;
     }
 
+    if (s_wifi_ota_guard != 0U)
+    {
+        ESP_LOGI(TAG, "Skip WiFi disable because OTA guard is active");
+        return wifi_service_apply_ps_mode();
+    }
+
     s_wifi_enabled = 0U;
     s_wifi_connected = 0U;
     app_service_bus_clear_bits(APP_EVENT_WIFI_CONNECTED);
@@ -286,6 +297,12 @@ esp_err_t wifi_service_set_enabled(uint8_t enabled)
         return err;
     }
     return ESP_OK;
+}
+
+esp_err_t wifi_service_set_ota_guard(uint8_t enabled)
+{
+    s_wifi_ota_guard = (enabled != 0U) ? 1U : 0U;
+    return wifi_service_apply_ps_mode();
 }
 
 esp_err_t wifi_service_apply_host_power(uint8_t power_policy, uint8_t host_state)

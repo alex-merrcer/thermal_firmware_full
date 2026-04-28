@@ -9,6 +9,7 @@ typedef struct
     uint8_t wifi_enabled;
     uint8_t wifi_connected;
     uint8_t ble_enabled;
+    uint8_t mqtt_enabled;
     uint8_t debug_screen_enabled;
     uint8_t remote_keys_enabled;
     uint8_t has_credentials;

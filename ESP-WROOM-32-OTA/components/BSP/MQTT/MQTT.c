@@ -48,6 +48,7 @@ bool MQTT_OTA = false;
 static uint8_t s_service_inited = 0U;
 static uint8_t s_client_created = 0U;
 static uint8_t s_client_started = 0U;
+static uint8_t s_mqtt_enabled = 0U;
 static uint8_t s_logged_missing_config = 0U;
 static uint32_t s_publish_seq = 1U;
 static mqtt_thermal_snapshot_t s_pending_snapshots[MQTT_THERMAL_QUEUE_LENGTH];
@@ -846,6 +847,7 @@ esp_err_t mqtt_service_init(void)
     s_service_inited = 1U;
     s_client_created = 0U;
     s_client_started = 0U;
+    s_mqtt_enabled = 0U;
     s_logged_missing_config = 0U;
     s_publish_seq = 1U;
     mqtt_connected = false;
@@ -867,6 +869,20 @@ esp_err_t mqtt_service_init(void)
     return ESP_OK;
 }
 
+void mqtt_service_set_enabled(uint8_t enabled)
+{
+    s_mqtt_enabled = (enabled != 0U) ? 1U : 0U;
+    if (s_mqtt_enabled == 0U)
+    {
+        mqtt_service_stop_if_needed();
+    }
+}
+
+uint8_t mqtt_service_is_enabled(void)
+{
+    return s_mqtt_enabled;
+}
+
 void mqtt_service_step(void)
 {
     if (s_service_inited == 0U)
@@ -876,6 +892,12 @@ void mqtt_service_step(void)
 
     if (mqtt_service_is_configured() == 0U)
     {
+        return;
+    }
+
+    if (s_mqtt_enabled == 0U)
+    {
+        mqtt_service_stop_if_needed();
         return;
     }
 
@@ -932,27 +954,16 @@ esp_err_t mqtt_service_submit_thermal_snapshot_x10(int16_t min_temp_x10,
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (s_mqtt_enabled == 0U)
+    {
+        return ESP_OK;
+    }
+
     mqtt_service_pending_snapshot_push(&(mqtt_thermal_snapshot_t){
         .min_temp_x10 = min_temp_x10,
         .max_temp_x10 = max_temp_x10,
         .center_temp_x10 = center_temp_x10,
     });
-
-    if (wifi_service_is_enabled() == 0U)
-    {
-        if (wifi_service_has_credentials() == 0U)
-        {
-            ESP_LOGE(MQTT_TAG, "WiFi credentials are empty, cannot publish thermal snapshot");
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        err = wifi_service_set_enabled(1U);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(MQTT_TAG, "wifi_service_set_enabled(1) failed: 0x%04X", (unsigned int)err);
-            return err;
-        }
-    }
 
     return ESP_OK;
 }
@@ -980,28 +991,17 @@ esp_err_t mqtt_service_submit_ota_status(uint8_t stage,
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (s_mqtt_enabled == 0U)
+    {
+        return ESP_OK;
+    }
+
     s_pending_ota_status.stage = stage;
     s_pending_ota_status.percent = percent;
     s_pending_ota_status.detail_code = detail_code;
     s_pending_ota_status.current_value = current_value;
     s_pending_ota_status.total_value = total_value;
     s_pending_ota_status.valid = 1U;
-
-    if (wifi_service_is_enabled() == 0U)
-    {
-        if (wifi_service_has_credentials() == 0U)
-        {
-            ESP_LOGE(MQTT_TAG, "WiFi credentials are empty, cannot publish OTA status");
-            return ESP_ERR_INVALID_STATE;
-        }
-
-        err = wifi_service_set_enabled(1U);
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(MQTT_TAG, "wifi_service_set_enabled(1) failed for OTA status: 0x%04X", (unsigned int)err);
-            return err;
-        }
-    }
 
     if (mqtt_connected != false && client != NULL)
     {
