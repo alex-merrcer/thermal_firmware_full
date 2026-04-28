@@ -275,7 +275,8 @@ void settings_service_init(void)
         }
         if (blob.version < DEVICE_SETTINGS_BLOB_VERSION)
         {
-            /* V5 adds user-controlled cloud connectivity; keep it disabled by default. */
+            /* V5 makes BLE/cloud user-controlled; keep both disabled by default after migration. */
+            s_settings.ble_enabled = 0U;
             s_settings.mqtt_enabled = 0U;
             should_resave = 1U;
         }
