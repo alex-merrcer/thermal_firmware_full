@@ -357,6 +357,7 @@ static void esp_host_apply_status_bits(uint32_t status_bits)
     s_status.wifi_enabled = ((status_bits & OTA_HOST_STATUS_WIFI_ENABLED) != 0U) ? 1U : 0U;
     s_status.wifi_connected = ((status_bits & OTA_HOST_STATUS_WIFI_CONNECTED) != 0U) ? 1U : 0U;
     s_status.ble_enabled = ((status_bits & OTA_HOST_STATUS_BLE_ENABLED) != 0U) ? 1U : 0U;
+    s_status.ble_connected = ((status_bits & OTA_HOST_STATUS_BLE_CONNECTED) != 0U) ? 1U : 0U;
     s_status.mqtt_enabled = ((status_bits & OTA_HOST_STATUS_MQTT_ENABLED) != 0U) ? 1U : 0U;
     s_status.debug_screen_enabled = ((status_bits & OTA_HOST_STATUS_DEBUG_SCREEN_ENABLED) != 0U) ? 1U : 0U;
     s_status.remote_keys_enabled = ((status_bits & OTA_HOST_STATUS_REMOTE_KEYS_ENABLED) != 0U) ? 1U : 0U;
@@ -392,6 +393,8 @@ static void esp_host_note_failure(void)
          (s_consecutive_failures >= ESP_HOST_MAX_FAILURES || age_ms >= ESP_HOST_OFFLINE_GRACE_MS)))
     {
         s_status.online = 0U;
+        s_status.wifi_connected = 0U;
+        s_status.ble_connected = 0U;
     }
 }
 
@@ -438,6 +441,10 @@ static void esp_host_update_cached_switch(uint8_t cmd, uint8_t enabled)
 
     case OTA_HOST_CMD_SET_BLE:
         s_status.ble_enabled = (enabled != 0U) ? 1U : 0U;
+        if (enabled == 0U)
+        {
+            s_status.ble_connected = 0U;
+        }
         break;
 
     case OTA_HOST_CMD_SET_MQTT:
@@ -849,6 +856,7 @@ uint8_t esp_host_enter_forced_deep_sleep_now(uint32_t timeout_ms)
     s_status.online = 0U;
     s_status.ready_for_sleep = 0U;
     s_status.wifi_connected = 0U;
+    s_status.ble_connected = 0U;
     return 1U;
 }
 

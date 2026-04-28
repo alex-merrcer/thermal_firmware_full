@@ -29,6 +29,13 @@ void ui_renderer_draw_header_path_hint(const char *parent_title,
                                        const char *child_title,
                                        const char *hint,
                                        uint16_t header_color);
+void ui_renderer_draw_product_background(void);
+void ui_renderer_draw_page_intro(const char *title,
+                                 const char *subtitle,
+                                 uint16_t accent_color);
+void ui_renderer_draw_product_page(const char *title,
+                                   const char *subtitle,
+                                   uint16_t accent_color);
 void ui_renderer_draw_footer(const char *line1, const char *line2);
 void ui_renderer_clear_body(uint16_t color);
 void ui_renderer_clear_row(uint16_t y, uint16_t color);

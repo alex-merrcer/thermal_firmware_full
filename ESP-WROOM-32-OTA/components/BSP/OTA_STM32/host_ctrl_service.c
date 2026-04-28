@@ -233,7 +233,11 @@ static void host_ctrl_debug_render(void)
     snprintf(line, sizeof(line), "Link   %s", (wifi_service_is_connected() != 0U) ? "OK" : "IDLE");
     LCD_ShowString(6, 46, 150, 16, 16, (unsigned char *)line, WHITE, BLACK);
 
-    snprintf(line, sizeof(line), "BLE    %s", (s_ble_enabled != 0U) ? "ON" : "OFF");
+    snprintf(line,
+             sizeof(line),
+             "BLE    %s",
+             (ble_provision_service_is_connected() != 0U) ? "LINK" :
+             ((s_ble_enabled != 0U) ? "ON" : "OFF"));
     LCD_ShowString(6, 64, 150, 16, 16, (unsigned char *)line, WHITE, BLACK);
 
     snprintf(line, sizeof(line), "Pwr    %s", host_ctrl_power_policy_text(s_power_policy));
@@ -348,6 +352,10 @@ static uint32_t host_ctrl_status_bits(void)
     if (s_ble_enabled != 0U)
     {
         bits |= OTA_HOST_STATUS_BLE_ENABLED;
+    }
+    if (ble_provision_service_is_connected() != 0U)
+    {
+        bits |= OTA_HOST_STATUS_BLE_CONNECTED;
     }
     if (mqtt_service_is_enabled() != 0U)
     {

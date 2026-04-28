@@ -154,6 +154,7 @@ extern "C" {
 #define OTA_HOST_STATUS_HAS_CREDENTIALS        (1UL << 5)
 #define OTA_HOST_STATUS_READY_FOR_SLEEP        (1UL << 6)
 #define OTA_HOST_STATUS_MQTT_ENABLED           (1UL << 7)
+#define OTA_HOST_STATUS_BLE_CONNECTED          (1UL << 8)
 
 #define OTA_HOST_REMOTE_KEY_NONE           0x00U
 #define OTA_HOST_REMOTE_KEY_1              0x01U

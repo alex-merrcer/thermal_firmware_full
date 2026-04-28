@@ -766,6 +766,11 @@ uint8_t ble_provision_service_should_force_ble(void)
     return (uint8_t)((s_connected != 0U || s_waiting_wifi_result != 0U) ? 1U : 0U);
 }
 
+uint8_t ble_provision_service_is_connected(void)
+{
+    return s_connected;
+}
+
 void ble_provision_service_on_wifi_connected(void)
 {
     s_waiting_wifi_result = 0U;

@@ -19,6 +19,17 @@
 #include "redpic1_app.h"
 #include "ui_renderer.h"
 
+#define PAGE_UI_RGB565(r, g, b) ((uint16_t)((((uint16_t)(r) & 0xF8U) << 8) | \
+                                            (((uint16_t)(g) & 0xFCU) << 3) | \
+                                            (((uint16_t)(b) & 0xF8U) >> 3)))
+#define PAGE_UI_BG_COLOR             PAGE_UI_RGB565(5U, 18U, 30U)
+#define PAGE_UI_PANEL_COLOR          PAGE_UI_RGB565(10U, 32U, 48U)
+#define PAGE_UI_PANEL_EDGE_COLOR     PAGE_UI_RGB565(48U, 78U, 96U)
+#define PAGE_UI_ACCENT_COLOR         PAGE_UI_RGB565(255U, 120U, 0U)
+#define PAGE_UI_ACCENT_EDGE_COLOR    PAGE_UI_RGB565(255U, 166U, 64U)
+#define PAGE_UI_CYAN_COLOR           PAGE_UI_RGB565(90U, 220U, 230U)
+#define PAGE_UI_SUBTEXT_COLOR        PAGE_UI_RGB565(170U, 176U, 184U)
+
 /*
  * 椤甸潰娉ㄥ唽琛ㄦ枃浠跺悓鏃舵壙杞介〉闈㈠洖璋冩敞鍐屻€侀〉闈㈢鏈夌姸鎬併€佸紓姝ユ湇鍔″洖娴佸拰灞€閮ㄥ埛鏂伴€昏緫銆? * ui_manager 鍙礋璐ｅ仛杞婚噺璋冨害锛岀湡姝ｇ殑椤甸潰鐘舵€佷笌椤甸潰鍐呴儴鍗忎綔閮介泦涓敹鍙ｅ湪杩欓噷銆? */
 
@@ -97,6 +108,15 @@ typedef struct
 
 /* 鎸夌储寮曢噸缁樺崟涓彍鍗曢」鐨勫洖璋冪被鍨嬨€?*/
 typedef void (*page_draw_item_fn_t)(uint8_t index);
+
+typedef struct
+{
+    const char *title;
+    const char *subtitle;
+    uint8_t icon;
+    ui_page_id_t target;
+    uint16_t accent;
+} home_menu_item_t;
 
 static void home_on_enter(ui_page_id_t previous_page);
 static void home_on_leave(ui_page_id_t next_page);
@@ -237,22 +257,13 @@ static uint8_t s_ota_show_partition_rows = 0U;
 static page_async_state_t s_async_state;
 
 /* 棣栭〉鑿滃崟鏂囨湰銆?*/
-static const char * const s_home_items[] =
+static const home_menu_item_t s_home_items[] =
 {
-    "Thermal",
-    "Update",
-    "WiFi",
-    "Power",
-    "System"
-};
-
-static const uint16_t s_home_item_colors[] =
-{
-    RED,
-    GBLUE,
-    GREEN,
-    BROWN,
-    DARKBLUE
+    { "Thermal",  "Live Thermal View",     0U, UI_PAGE_THERMAL,      PAGE_UI_ACCENT_COLOR },
+    { "Update",   "Check Version / Upgrade", 1U, UI_PAGE_OTA_CENTER,   PAGE_UI_ACCENT_COLOR },
+    { "Wireless", "Connection Status",     2U, UI_PAGE_CONNECTIVITY, PAGE_UI_ACCENT_COLOR },
+    { "Power",    "Power Profile",         3U, UI_PAGE_POWER,        PAGE_UI_ACCENT_COLOR },
+    { "System",   "Select Feature",        4U, UI_PAGE_SYSTEM,       PAGE_UI_ACCENT_COLOR }
 };
 
 /* OTA 椤甸潰鑿滃崟鏂囨湰銆?*/
@@ -321,23 +332,28 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #endif
 #define ENGINEERING_ITEM_COUNT     3U
 
-#define HOME_LIST_START_Y          70U
-#define HOME_BANNER_TOP            38U
-#define HOME_BANNER_HEIGHT         24U
+#define HOME_LIST_START_Y          76U
+#define HOME_BANNER_TOP            34U
+#define HOME_BANNER_HEIGHT         34U
 #define HOME_CARD_LEFT             12U
 #define HOME_CARD_RIGHT            (LCD_W - 12U)
-#define HOME_CARD_HEIGHT           28U
-#define HOME_CARD_GAP              6U
-#define HOME_CARD_ICON_LEFT        22U
-#define HOME_CARD_TEXT_LEFT        52U
-#define HOME_CARD_CHEVRON_LEFT     (LCD_W - 30U)
-#define WIFI_STATUS_Y              UI_CONTENT_TOP
-#define WIFI_LIST_START_Y          86U
+#define HOME_CARD_HEIGHT           26U
+#define HOME_CARD_GAP              5U
+#define HOME_CARD_ICON_LEFT        24U
+#define HOME_CARD_TEXT_LEFT        64U
+#define HOME_CARD_SUBTITLE_LEFT    150U
+#define HOME_CARD_CHEVRON_LEFT     (LCD_W - 28U)
+#define PAGE_INFO_ROW1_Y           72U
+#define PAGE_INFO_ROW2_Y           96U
+#define PAGE_INFO_ROW3_Y           120U
+#define PAGE_INFO_ROW4_Y           144U
+#define WIFI_STATUS_Y              PAGE_INFO_ROW1_Y
+#define WIFI_LIST_START_Y          104U
 #define WIFI_ITEM_COUNT            3U
-#define OTA_LIST_START_Y           88U
-#define POWER_LIST_START_Y         120U
-#define SYSTEM_LIST_START_Y        90U
-#define DEBUG_LIST_START_Y         60U
+#define OTA_LIST_START_Y           104U
+#define POWER_LIST_START_Y         146U
+#define SYSTEM_LIST_START_Y        88U
+#define DEBUG_LIST_START_Y         88U
 
 #define WIFI_STATUS_REFRESH_MS     1500UL
 #define POWER_PAGE_HOST_PREP_TIMEOUT_MS 400UL
@@ -984,7 +1000,7 @@ static void ota_center_draw_info_rows(void)
     char wifi_buffer[24];
 
     page_format_wifi_status(wifi_buffer, sizeof(wifi_buffer));
-    ui_renderer_draw_value_row(UI_CONTENT_TOP,
+    ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y,
                                "WiFi Status",
                                wifi_buffer,
                                BLACK,
@@ -1560,8 +1576,8 @@ static uint16_t home_card_y(uint8_t index)
 
 static void home_draw_chevron(uint16_t x, uint16_t y, uint16_t color)
 {
-    LCD_DrawLine(x, y, (uint16_t)(x + 6U), (uint16_t)(y + 6U), color);
-    LCD_DrawLine((uint16_t)(x + 6U), (uint16_t)(y + 6U), x, (uint16_t)(y + 12U), color);
+    LCD_DrawLine(x, y, (uint16_t)(x + 7U), (uint16_t)(y + 7U), color);
+    LCD_DrawLine((uint16_t)(x + 7U), (uint16_t)(y + 7U), x, (uint16_t)(y + 14U), color);
 }
 
 static void home_draw_icon(uint8_t index, uint16_t x, uint16_t y, uint16_t color)
@@ -1569,73 +1585,55 @@ static void home_draw_icon(uint8_t index, uint16_t x, uint16_t y, uint16_t color
     switch (index)
     {
     case 0U:
-        Draw_Circle((uint16_t)(x + 8U), (uint16_t)(y + 8U), 6U, color);
-        LCD_DrawLine((uint16_t)(x + 8U), (uint16_t)(y + 2U), (uint16_t)(x + 8U), (uint16_t)(y + 14U), color);
-        LCD_DrawLine((uint16_t)(x + 2U), (uint16_t)(y + 8U), (uint16_t)(x + 14U), (uint16_t)(y + 8U), color);
+        LCD_DrawRectangle((uint16_t)(x + 3U), (uint16_t)(y + 2U), (uint16_t)(x + 15U), (uint16_t)(y + 18U), color);
+        LCD_DrawRectangle((uint16_t)(x + 7U), (uint16_t)(y + 4U), (uint16_t)(x + 11U), (uint16_t)(y + 8U), color);
+        LCD_DrawLine((uint16_t)(x + 9U), (uint16_t)(y + 9U), (uint16_t)(x + 9U), (uint16_t)(y + 14U), color);
+        LCD_DrawLine((uint16_t)(x + 7U), (uint16_t)(y + 13U), (uint16_t)(x + 11U), (uint16_t)(y + 13U), color);
+        LCD_DrawLine((uint16_t)(x + 6U), (uint16_t)(y + 19U), (uint16_t)(x + 12U), (uint16_t)(y + 19U), color);
         break;
 
     case 1U:
-        LCD_DrawRectangle((uint16_t)(x + 2U), (uint16_t)(y + 3U), (uint16_t)(x + 14U), (uint16_t)(y + 13U), color);
-        LCD_DrawLine((uint16_t)(x + 8U), (uint16_t)(y + 4U), (uint16_t)(x + 8U), (uint16_t)(y + 11U), color);
-        LCD_DrawLine((uint16_t)(x + 5U), (uint16_t)(y + 8U), (uint16_t)(x + 8U), (uint16_t)(y + 11U), color);
-        LCD_DrawLine((uint16_t)(x + 11U), (uint16_t)(y + 8U), (uint16_t)(x + 8U), (uint16_t)(y + 11U), color);
+        Draw_Circle((uint16_t)(x + 9U), (uint16_t)(y + 9U), 5U, color);
+        LCD_DrawLine((uint16_t)(x + 9U), (uint16_t)(y + 4U), (uint16_t)(x + 9U), (uint16_t)(y + 12U), color);
+        LCD_DrawLine((uint16_t)(x + 6U), (uint16_t)(y + 9U), (uint16_t)(x + 9U), (uint16_t)(y + 12U), color);
+        LCD_DrawLine((uint16_t)(x + 12U), (uint16_t)(y + 9U), (uint16_t)(x + 9U), (uint16_t)(y + 12U), color);
+        LCD_DrawLine((uint16_t)(x + 3U), (uint16_t)(y + 16U), (uint16_t)(x + 15U), (uint16_t)(y + 16U), color);
         break;
 
     case 2U:
-        LCD_DrawLine((uint16_t)(x + 2U), (uint16_t)(y + 11U), (uint16_t)(x + 8U), (uint16_t)(y + 5U), color);
-        LCD_DrawLine((uint16_t)(x + 14U), (uint16_t)(y + 11U), (uint16_t)(x + 8U), (uint16_t)(y + 5U), color);
-        LCD_DrawLine((uint16_t)(x + 5U), (uint16_t)(y + 11U), (uint16_t)(x + 8U), (uint16_t)(y + 8U), color);
-        LCD_DrawLine((uint16_t)(x + 11U), (uint16_t)(y + 11U), (uint16_t)(x + 8U), (uint16_t)(y + 8U), color);
-        LCD_DrawPoint((uint16_t)(x + 8U), (uint16_t)(y + 13U), color);
+        LCD_DrawLine((uint16_t)(x + 2U), (uint16_t)(y + 10U), (uint16_t)(x + 9U), (uint16_t)(y + 3U), color);
+        LCD_DrawLine((uint16_t)(x + 16U), (uint16_t)(y + 10U), (uint16_t)(x + 9U), (uint16_t)(y + 3U), color);
+        LCD_DrawLine((uint16_t)(x + 5U), (uint16_t)(y + 12U), (uint16_t)(x + 9U), (uint16_t)(y + 8U), color);
+        LCD_DrawLine((uint16_t)(x + 13U), (uint16_t)(y + 12U), (uint16_t)(x + 9U), (uint16_t)(y + 8U), color);
+        LCD_Fill((uint16_t)(x + 8U), (uint16_t)(y + 15U), (uint16_t)(x + 10U), (uint16_t)(y + 17U), color);
         break;
 
     case 3U:
-        Draw_Circle((uint16_t)(x + 8U), (uint16_t)(y + 8U), 6U, color);
-        LCD_DrawLine((uint16_t)(x + 8U), (uint16_t)(y + 1U), (uint16_t)(x + 8U), (uint16_t)(y + 7U), color);
+        LCD_DrawRectangle((uint16_t)(x + 2U), (uint16_t)(y + 5U), (uint16_t)(x + 16U), (uint16_t)(y + 15U), color);
+        LCD_DrawRectangle((uint16_t)(x + 17U), (uint16_t)(y + 8U), (uint16_t)(x + 18U), (uint16_t)(y + 12U), color);
+        LCD_DrawLine((uint16_t)(x + 5U), (uint16_t)(y + 7U), (uint16_t)(x + 5U), (uint16_t)(y + 13U), color);
+        LCD_DrawLine((uint16_t)(x + 9U), (uint16_t)(y + 7U), (uint16_t)(x + 9U), (uint16_t)(y + 13U), color);
+        LCD_DrawLine((uint16_t)(x + 13U), (uint16_t)(y + 7U), (uint16_t)(x + 13U), (uint16_t)(y + 13U), color);
         break;
 
     case 4U:
     default:
-        LCD_DrawRectangle((uint16_t)(x + 2U), (uint16_t)(y + 2U), (uint16_t)(x + 14U), (uint16_t)(y + 14U), color);
-        LCD_DrawLine((uint16_t)(x + 8U), (uint16_t)(y + 4U), (uint16_t)(x + 8U), (uint16_t)(y + 12U), color);
-        LCD_DrawLine((uint16_t)(x + 4U), (uint16_t)(y + 8U), (uint16_t)(x + 12U), (uint16_t)(y + 8U), color);
+        Draw_Circle((uint16_t)(x + 9U), (uint16_t)(y + 10U), 5U, color);
+        LCD_DrawLine((uint16_t)(x + 9U), (uint16_t)(y + 1U), (uint16_t)(x + 9U), (uint16_t)(y + 4U), color);
+        LCD_DrawLine((uint16_t)(x + 9U), (uint16_t)(y + 16U), (uint16_t)(x + 9U), (uint16_t)(y + 19U), color);
+        LCD_DrawLine((uint16_t)(x + 1U), (uint16_t)(y + 10U), (uint16_t)(x + 4U), (uint16_t)(y + 10U), color);
+        LCD_DrawLine((uint16_t)(x + 14U), (uint16_t)(y + 10U), (uint16_t)(x + 17U), (uint16_t)(y + 10U), color);
+        LCD_DrawLine((uint16_t)(x + 3U), (uint16_t)(y + 4U), (uint16_t)(x + 5U), (uint16_t)(y + 6U), color);
+        LCD_DrawLine((uint16_t)(x + 13U), (uint16_t)(y + 14U), (uint16_t)(x + 15U), (uint16_t)(y + 16U), color);
+        LCD_DrawLine((uint16_t)(x + 13U), (uint16_t)(y + 6U), (uint16_t)(x + 15U), (uint16_t)(y + 4U), color);
+        LCD_DrawLine((uint16_t)(x + 3U), (uint16_t)(y + 16U), (uint16_t)(x + 5U), (uint16_t)(y + 14U), color);
         break;
     }
 }
 
 static void home_draw_banner(void)
 {
-    app_display_runtime_lock();
-    LCD_Fill(HOME_CARD_LEFT,
-             HOME_BANNER_TOP,
-             HOME_CARD_RIGHT,
-             (uint16_t)(HOME_BANNER_TOP + HOME_BANNER_HEIGHT),
-             LIGHTBLUE);
-    LCD_Fill(HOME_CARD_LEFT,
-             HOME_BANNER_TOP,
-             (uint16_t)(HOME_CARD_LEFT + 5U),
-             (uint16_t)(HOME_BANNER_TOP + HOME_BANNER_HEIGHT),
-             BLUE);
-    LCD_DrawRectangle(HOME_CARD_LEFT,
-                      HOME_BANNER_TOP,
-                      HOME_CARD_RIGHT,
-                      (uint16_t)(HOME_BANNER_TOP + HOME_BANNER_HEIGHT),
-                      BLUE);
-    LCD_ShowUTF8String((uint16_t)(HOME_CARD_LEFT + 14U),
-                       (uint16_t)(HOME_BANNER_TOP + 4U),
-                       ui_renderer_localize("Function Home"),
-                       DARKBLUE,
-                       LIGHTBLUE,
-                       16,
-                       0);
-    Draw_Circle((uint16_t)(HOME_CARD_RIGHT - 16U),
-                (uint16_t)(HOME_BANNER_TOP + 12U),
-                4U,
-                RED);
-    LCD_DrawPoint((uint16_t)(HOME_CARD_RIGHT - 16U),
-                  (uint16_t)(HOME_BANNER_TOP + 12U),
-                  RED);
-    app_display_runtime_unlock();
+    ui_renderer_draw_page_intro("Main Menu", "Device Entry", PAGE_UI_ACCENT_COLOR);
 }
 
 static void home_draw_items(void)
@@ -1651,50 +1649,57 @@ static void home_draw_items(void)
 /* 鏍规嵁绱㈠紩閲嶇粯棣栭〉涓殑鍗曚釜鑿滃崟椤广€?*/
 static void home_draw_item(uint8_t index)
 {
+    const home_menu_item_t *item = 0;
     uint16_t y = 0U;
     uint16_t x1 = HOME_CARD_LEFT;
     uint16_t x2 = HOME_CARD_RIGHT;
     uint16_t y2 = 0U;
-    uint16_t accent = 0U;
-    uint16_t shadow = 0xD69AU;
-    uint16_t fill = WHITE;
-    uint16_t border = GRAYBLUE;
-    uint16_t text_color = DARKBLUE;
+    uint16_t accent = PAGE_UI_ACCENT_COLOR;
+    uint16_t fill = PAGE_UI_PANEL_COLOR;
+    uint16_t border = PAGE_UI_PANEL_EDGE_COLOR;
+    uint16_t icon_color = PAGE_UI_CYAN_COLOR;
+    uint16_t title_color = WHITE;
+    uint16_t subtitle_color = PAGE_UI_SUBTEXT_COLOR;
+    uint16_t chevron_color = PAGE_UI_SUBTEXT_COLOR;
 
     if (index >= HOME_ITEM_COUNT)
     {
         return;
     }
 
+    item = &s_home_items[index];
     y = home_card_y(index);
-    y2 = (uint16_t)(y + HOME_CARD_HEIGHT);
-    accent = s_home_item_colors[index];
+    y2 = (uint16_t)(y + HOME_CARD_HEIGHT - 1U);
+    accent = item->accent;
 
     if (s_home_selected == index)
     {
         fill = accent;
-        border = accent;
-        text_color = WHITE;
+        border = PAGE_UI_ACCENT_EDGE_COLOR;
+        icon_color = WHITE;
+        subtitle_color = PAGE_UI_RGB565(244U, 215U, 184U);
+        chevron_color = WHITE;
     }
 
     app_display_runtime_lock();
-    LCD_Fill((uint16_t)(x1 + 2U),
-             (uint16_t)(y + 2U),
-             (uint16_t)(x2 + 1U),
-             (uint16_t)(y2 + 1U),
-             shadow);
     LCD_Fill(x1, y, x2, y2, fill);
-    LCD_Fill(x1, y, (uint16_t)(x1 + 5U), y2, accent);
     LCD_DrawRectangle(x1, y, x2, y2, border);
-    home_draw_icon(index, HOME_CARD_ICON_LEFT, (uint16_t)(y + 5U), text_color);
+    home_draw_icon(item->icon, HOME_CARD_ICON_LEFT, (uint16_t)(y + 3U), icon_color);
     LCD_ShowUTF8String(HOME_CARD_TEXT_LEFT,
-                       (uint16_t)(y + 6U),
-                       ui_renderer_localize(s_home_items[index]),
-                       text_color,
+                       (uint16_t)(y + 5U),
+                       ui_renderer_localize(item->title),
+                       title_color,
                        fill,
                        16,
                        0);
-    home_draw_chevron(HOME_CARD_CHEVRON_LEFT, (uint16_t)(y + 8U), text_color);
+    LCD_ShowUTF8String(HOME_CARD_SUBTITLE_LEFT,
+                       (uint16_t)(y + 5U),
+                       ui_renderer_localize(item->subtitle),
+                       subtitle_color,
+                       fill,
+                       16,
+                       0);
+    home_draw_chevron(HOME_CARD_CHEVRON_LEFT, (uint16_t)(y + 6U), chevron_color);
     app_display_runtime_unlock();
 }
 
@@ -1797,77 +1802,23 @@ static void power_draw_battery_status(void)
 {
     char value_buffer[12];
     uint8_t percent = battery_monitor_get_percent();
-    uint16_t fill_color = GREEN;
-    uint16_t outline_color = BLACK;
-    uint16_t row_top = UI_CONTENT_TOP;
-    uint16_t row_bottom = (uint16_t)(UI_CONTENT_TOP + UI_ROW_HEIGHT - 2U);
-    uint16_t icon_left = 208U;
-    uint16_t icon_top = (uint16_t)(UI_CONTENT_TOP + 4U);
-    uint16_t icon_right = 232U;
-    uint16_t icon_bottom = (uint16_t)(icon_top + 12U);
-    uint16_t inner_left = (uint16_t)(icon_left + 2U);
-    uint16_t inner_top = (uint16_t)(icon_top + 2U);
-    uint16_t inner_right = (uint16_t)(icon_right - 2U);
-    uint16_t inner_bottom = (uint16_t)(icon_bottom - 2U);
-    uint16_t inner_width = (uint16_t)(inner_right - inner_left + 1U);
-    uint16_t fill_width = 0U;
+    uint16_t value_color = GREEN;
 
     if (percent < 30U)
     {
-        fill_color = RED;
+        value_color = RED;
     }
     else if (percent < 60U)
     {
-        fill_color = YELLOW;
+        value_color = YELLOW;
     }
 
     page_format_battery(value_buffer, sizeof(value_buffer));
-    if (percent > 0U)
-    {
-        fill_width = (uint16_t)(((uint32_t)inner_width * percent + 99UL) / 100UL);
-        if (fill_width == 0U)
-        {
-            fill_width = 1U;
-        }
-        if (fill_width > inner_width)
-        {
-            fill_width = inner_width;
-        }
-    }
-
-    app_display_runtime_lock();
-    LCD_Fill(8U, row_top, LCD_W - 8U, row_bottom, WHITE);
-    LCD_ShowUTF8String(12U,
-                       row_top,
-                       ui_renderer_localize("Battery Level"),
-                       BLACK,
-                       WHITE,
-                       16,
-                       0);
-    LCD_ShowUTF8String(88U,
-                       row_top,
-                       value_buffer,
-                       fill_color,
-                       WHITE,
-                       16,
-                       0);
-
-    LCD_DrawRectangle(icon_left, icon_top, icon_right, icon_bottom, outline_color);
-    LCD_DrawRectangle((uint16_t)(icon_right + 1U),
-                      (uint16_t)(icon_top + 3U),
-                      (uint16_t)(icon_right + 3U),
-                      (uint16_t)(icon_bottom - 3U),
-                      outline_color);
-    LCD_Fill(inner_left, inner_top, inner_right, inner_bottom, WHITE);
-    if (fill_width > 0U)
-    {
-        LCD_Fill(inner_left,
-                 inner_top,
-                 (uint16_t)(inner_left + fill_width - 1U),
-                 inner_bottom,
-                 fill_color);
-    }
-    app_display_runtime_unlock();
+    ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y,
+                               "Battery Level",
+                               value_buffer,
+                               value_color,
+                               WHITE);
 }
 
 /* 鏍规嵁绱㈠紩缁樺埗鐢垫簮椤甸潰涓殑鍗曚釜鑿滃崟椤广€?*/
@@ -1876,12 +1827,12 @@ static void power_draw_policy_status(void)
     device_settings_t settings;
 
     app_rtos_settings_copy(&settings);
-    ui_renderer_draw_value_row((uint16_t)(UI_CONTENT_TOP + UI_ROW_HEIGHT),
+    ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y,
                                "Power Mode",
                                ui_renderer_power_policy_text(settings.power_policy),
                                DARKBLUE,
                                WHITE);
-    ui_renderer_draw_value_row((uint16_t)(UI_CONTENT_TOP + (2U * UI_ROW_HEIGHT)),
+    ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y,
                                "Clock Policy",
                                ui_renderer_clock_policy_text(settings.clock_profile_policy),
                                DARKBLUE,
@@ -1996,7 +1947,7 @@ static void system_draw_item(uint8_t index)
         }
         else
         {
-            ui_renderer_clear_row(item_y, WHITE);
+            ui_renderer_clear_row(item_y, PAGE_UI_BG_COLOR);
         }
     }
 #else
@@ -2020,7 +1971,7 @@ static void system_draw_item(uint8_t index)
         }
         else
         {
-            ui_renderer_clear_row(item_y, WHITE);
+            ui_renderer_clear_row(item_y, PAGE_UI_BG_COLOR);
         }
     }
 #endif
@@ -2104,23 +2055,9 @@ static void home_on_key(uint8_t key_value)
     }
     else if (key_value == KEY2_PRES)
     {
-        switch (s_home_selected)
+        if (s_home_selected < HOME_ITEM_COUNT)
         {
-        case 0U:
-            ui_manager_navigate_to(UI_PAGE_THERMAL);
-            break;
-        case 1U:
-            ui_manager_navigate_to(UI_PAGE_OTA_CENTER);
-            break;
-        case 2U:
-            ui_manager_navigate_to(UI_PAGE_CONNECTIVITY);
-            break;
-        case 3U:
-            ui_manager_navigate_to(UI_PAGE_POWER);
-            break;
-        default:
-            ui_manager_navigate_to(UI_PAGE_SYSTEM);
-            break;
+            ui_manager_navigate_to(s_home_items[s_home_selected].target);
         }
     }
 }
@@ -2139,8 +2076,7 @@ static void home_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_header_status("Main Menu", BLUE);
-    ui_renderer_clear_body(LGRAY);
+    ui_renderer_draw_product_background();
     home_draw_banner();
     home_draw_items();
 }
@@ -2346,8 +2282,7 @@ static void ota_center_render(uint8_t full_refresh)
 
     if (s_ota_mode == OTA_CENTER_MODE_MENU)
     {
-        ui_renderer_draw_header_status("Update", GBLUE);
-        ui_renderer_clear_body(WHITE);
+        ui_renderer_draw_product_page("Update", "Check Version / Firmware OTA", PAGE_UI_ACCENT_COLOR);
         ota_center_draw_info_rows();
         ota_center_draw_menu_items();
         return;
@@ -2355,14 +2290,13 @@ static void ota_center_render(uint8_t full_refresh)
 
     if (s_ota_mode == OTA_CENTER_MODE_CONFIRM_WIFI)
     {
-        ui_renderer_draw_header_path_status("Update", ota_center_child_title(), GBLUE);
-        ui_renderer_clear_body(WHITE);
-        ui_renderer_draw_value_row(72,
+        ui_renderer_draw_product_page("Update", ota_center_child_title(), PAGE_UI_ACCENT_COLOR);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y,
                                    "Need WiFi",
                                    (s_async_state.ota_wifi_enable_pending != 0U) ? "Enabling..." : "Turn on now?",
                                    BLACK,
                                    WHITE);
-        ui_renderer_draw_value_row(96,
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y,
                                    "Reason",
                                    (s_ota_pending_action == OTA_PENDING_UPGRADE) ? "Required to update" : "Required to check",
                                    BLACK,
@@ -2372,10 +2306,9 @@ static void ota_center_render(uint8_t full_refresh)
 
     if (s_ota_mode == OTA_CENTER_MODE_CONFIRM_UPGRADE)
     {
-        ui_renderer_draw_header_path_status("Update", ota_center_child_title(), GBLUE);
-        ui_renderer_clear_body(WHITE);
-        ui_renderer_draw_value_row(72, "Latest Version", s_ota_latest_version, GREEN, WHITE);
-        ui_renderer_draw_value_row(96,
+        ui_renderer_draw_product_page("Update", ota_center_child_title(), PAGE_UI_ACCENT_COLOR);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Latest Version", s_ota_latest_version, GREEN, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y,
                                    "Target",
                                    ota_service_get_partition_name(ota_service_get_inactive_partition()),
                                    BLACK,
@@ -2385,24 +2318,23 @@ static void ota_center_render(uint8_t full_refresh)
 
     if (s_ota_mode == OTA_CENTER_MODE_CONFIRM_ROLLBACK)
     {
-        ui_renderer_draw_header_path_status("Update", ota_center_child_title(), GBLUE);
-        ui_renderer_clear_body(WHITE);
-        ui_renderer_draw_value_row(72,
+        ui_renderer_draw_product_page("Update", ota_center_child_title(), PAGE_UI_ACCENT_COLOR);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y,
                                    "Current Partition",
                                    ota_service_get_partition_name(ota_service_get_active_partition()),
                                    BLACK,
                                    WHITE);
-        ui_renderer_draw_value_row(96,
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y,
                                    "Old Partition",
                                    ota_service_get_partition_name(ota_service_get_inactive_partition()),
                                    YELLOW,
                                    WHITE);
-        ui_renderer_draw_value_row(120,
+        ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y,
                                    "Current Version",
                                    ota_service_get_display_version(),
                                    BLACK,
                                    WHITE);
-        ui_renderer_draw_value_row(144,
+        ui_renderer_draw_value_row(PAGE_INFO_ROW4_Y,
                                    "Previous Version",
                                    ota_service_get_partition_version(ota_service_get_inactive_partition()),
                                    BLACK,
@@ -2410,23 +2342,22 @@ static void ota_center_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_header_path_status("Update", ota_center_child_title(), GBLUE);
-    ui_renderer_clear_body(WHITE);
+    ui_renderer_draw_product_page("Update", ota_center_child_title(), PAGE_UI_ACCENT_COLOR);
     if (s_ota_show_partition_rows != 0U)
     {
-        ui_renderer_draw_value_row(72, "Current Version", s_ota_info_current_version, BLACK, WHITE);
-        ui_renderer_draw_value_row(96, "Current Partition", s_ota_info_partition, BLACK, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Current Version", s_ota_info_current_version, BLACK, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Current Partition", s_ota_info_partition, BLACK, WHITE);
     }
     else if (s_ota_show_version_rows != 0U)
     {
-        ui_renderer_draw_value_row(72, "Version Info", s_ota_notice_line1, BLACK, WHITE);
-        ui_renderer_draw_value_row(96, "Current Version", s_ota_info_current_version, BLACK, WHITE);
-        ui_renderer_draw_value_row(120, "Latest Version", s_ota_info_latest_version, GREEN, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Version Info", s_ota_notice_line1, BLACK, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Current Version", s_ota_info_current_version, BLACK, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y, "Latest Version", s_ota_info_latest_version, GREEN, WHITE);
     }
     else
     {
-        ui_renderer_draw_value_row(72, "Info", s_ota_notice_line1, BLACK, WHITE);
-        ui_renderer_draw_value_row(96, "Detail", s_ota_notice_line2, BLACK, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Info", s_ota_notice_line1, BLACK, WHITE);
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Detail", s_ota_notice_line2, BLACK, WHITE);
     }
 }
 
@@ -2554,8 +2485,7 @@ static void connectivity_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_header_status("Wireless", GREEN);
-    ui_renderer_clear_body(WHITE);
+    ui_renderer_draw_product_page("Wireless", "Wi-Fi / Bluetooth / Server", PAGE_UI_ACCENT_COLOR);
     wifi_draw_status_row(1U);
     wifi_draw_item(1U);
 }
@@ -2654,8 +2584,7 @@ static void power_page_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_header_status("Power", BROWN);
-    ui_renderer_clear_body(WHITE);
+    ui_renderer_draw_product_page("Power", "Mode / Screen / Save", PAGE_UI_ACCENT_COLOR);
     power_draw_info_rows();
     power_draw_items();
 }
@@ -2757,8 +2686,7 @@ static void system_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_header_status("System", DARKBLUE);
-    ui_renderer_clear_body(WHITE);
+    ui_renderer_draw_product_page("System", "Debug / Display / Params", PAGE_UI_ACCENT_COLOR);
     system_draw_items();
 }
 
@@ -2850,8 +2778,7 @@ static void engineering_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_header("Debug Page", GRAYBLUE);
-    ui_renderer_clear_body(WHITE);
+    ui_renderer_draw_product_page("Debug Page", "Debug / Advanced Tools", PAGE_UI_ACCENT_COLOR);
     engineering_draw_items();
 }
 

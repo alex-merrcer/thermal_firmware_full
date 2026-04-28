@@ -9,6 +9,9 @@
 #include "lcd.h"
 #include "lcd_utf8.h"
 
+#define UI_RGB565(r, g, b) ((uint16_t)((((uint16_t)(r) & 0xF8U) << 8) | \
+                                       (((uint16_t)(g) & 0xFCU) << 3) | \
+                                       (((uint16_t)(b) & 0xF8U) >> 3)))
 #define UI_TEXT_LEFT_X      12U
 #define UI_VALUE_X          180U
 #define UI_ITEM_LEFT_X      12U
@@ -22,8 +25,189 @@
 #define UI_HEADER_BATTERY_HEIGHT 10U
 #define UI_HEADER_BATTERY_TIP_WIDTH 2U
 #define UI_HEADER_BATTERY_TIP_HEIGHT 4U
-#define UI_HEADER_WIFI_WIDTH 14U
+#define UI_HEADER_WIFI_WIDTH 16U
 #define UI_HEADER_WIFI_HEIGHT 12U
+#define UI_HEADER_BT_WIDTH 10U
+#define UI_HEADER_BT_HEIGHT 14U
+#define UI_PRODUCT_BG_COLOR         UI_RGB565(5U, 18U, 30U)
+#define UI_PRODUCT_GRID_COLOR       UI_RGB565(13U, 34U, 48U)
+#define UI_PRODUCT_HEADER_COLOR     UI_RGB565(3U, 13U, 22U)
+#define UI_PRODUCT_PANEL_COLOR      UI_RGB565(10U, 32U, 48U)
+#define UI_PRODUCT_PANEL_EDGE_COLOR UI_RGB565(48U, 78U, 96U)
+#define UI_PRODUCT_ACCENT_COLOR     UI_RGB565(255U, 120U, 0U)
+#define UI_PRODUCT_ACCENT_EDGE_COLOR UI_RGB565(255U, 166U, 64U)
+#define UI_PRODUCT_CYAN_COLOR       UI_RGB565(90U, 220U, 230U)
+#define UI_PRODUCT_SUBTEXT_COLOR    UI_RGB565(170U, 176U, 184U)
+#define UI_PRODUCT_DIM_COLOR        UI_RGB565(105U, 118U, 128U)
+#define UI_PRODUCT_SUCCESS_COLOR    UI_RGB565(142U, 216U, 92U)
+#define UI_PRODUCT_WARN_COLOR       UI_RGB565(255U, 198U, 90U)
+#define UI_PRODUCT_ERROR_COLOR      UI_RGB565(232U, 92U, 92U)
+#define UI_PRODUCT_ROW_LEFT         12U
+#define UI_PRODUCT_ROW_RIGHT        (LCD_W - 12U)
+#define UI_PRODUCT_ROW_TEXT_LEFT    20U
+#define UI_PRODUCT_ROW_VALUE_RIGHT  (LCD_W - 20U)
+#define UI_PRODUCT_INTRO_BAR_LEFT   14U
+#define UI_PRODUCT_INTRO_BAR_RIGHT  18U
+#define UI_PRODUCT_INTRO_BAR_TOP    36U
+#define UI_PRODUCT_INTRO_BAR_BOTTOM 68U
+#define UI_PRODUCT_INTRO_TITLE_X    28U
+#define UI_PRODUCT_INTRO_TITLE_Y    34U
+#define UI_PRODUCT_INTRO_SUBTITLE_X 30U
+#define UI_PRODUCT_INTRO_SUBTITLE_Y 56U
+
+static uint16_t ui_renderer_utf8_text_pixel_width(const char *text, uint16_t font_size);
+static uint16_t ui_renderer_draw_header_status_right(uint16_t header_color);
+
+static uint16_t ui_renderer_theme_value_color(uint16_t color)
+{
+    if (color == GREEN)
+    {
+        return UI_PRODUCT_SUCCESS_COLOR;
+    }
+    if (color == YELLOW)
+    {
+        return UI_PRODUCT_WARN_COLOR;
+    }
+    if (color == RED)
+    {
+        return UI_PRODUCT_ERROR_COLOR;
+    }
+    if (color == LGRAY)
+    {
+        return UI_PRODUCT_SUBTEXT_COLOR;
+    }
+
+    return WHITE;
+}
+
+static void ui_renderer_draw_text_right(uint16_t right_x,
+                                        uint16_t y,
+                                        const char *text,
+                                        uint16_t fc,
+                                        uint16_t bc)
+{
+    const char *display_text = ui_renderer_localize(text);
+    uint16_t width = 0U;
+    uint16_t x = right_x;
+
+    if (display_text == 0 || display_text[0] == '\0')
+    {
+        return;
+    }
+
+    width = ui_renderer_utf8_text_pixel_width(display_text, UI_UTF8_FONT_SIZE);
+    if (width < right_x)
+    {
+        x = (uint16_t)(right_x - width);
+    }
+
+    LCD_ShowUTF8String(x, y, display_text, fc, bc, UI_UTF8_FONT_SIZE, 0);
+}
+
+static void ui_renderer_draw_product_chevron(uint16_t x, uint16_t y, uint16_t color)
+{
+    LCD_DrawLine(x, y, (uint16_t)(x + 6U), (uint16_t)(y + 6U), color);
+    LCD_DrawLine((uint16_t)(x + 6U), (uint16_t)(y + 6U), x, (uint16_t)(y + 12U), color);
+}
+
+static void ui_renderer_draw_product_grid(uint16_t top, uint16_t bottom)
+{
+    uint16_t x = 0U;
+    uint16_t y = 0U;
+
+    for (y = top; y <= bottom; y = (uint16_t)(y + 8U))
+    {
+        for (x = 0U; x < LCD_W; x = (uint16_t)(x + 8U))
+        {
+            LCD_DrawPoint(x, y, UI_PRODUCT_GRID_COLOR);
+        }
+    }
+}
+
+static void ui_renderer_draw_product_circuit_lines(void)
+{
+    uint16_t c = UI_PRODUCT_GRID_COLOR;
+
+    LCD_DrawLine(188U, 40U, 228U, 40U, c);
+    LCD_DrawLine(228U, 40U, 240U, 30U, c);
+    LCD_DrawLine(240U, 30U, 308U, 30U, c);
+
+    LCD_DrawLine(172U, 56U, 220U, 56U, c);
+    LCD_DrawLine(220U, 56U, 236U, 46U, c);
+    LCD_DrawLine(236U, 46U, 304U, 46U, c);
+
+    LCD_Fill(226U, 38U, 229U, 41U, c);
+    LCD_Fill(238U, 28U, 241U, 31U, c);
+}
+
+static void ui_renderer_draw_brand_text(void)
+{
+    LCD_ShowString(8U,
+                   UI_HEADER_TITLE_Y,
+                   (const u8 *)"RedPic",
+                   UI_PRODUCT_ACCENT_COLOR,
+                   UI_PRODUCT_HEADER_COLOR,
+                   UI_UTF8_FONT_SIZE,
+                   0);
+    LCD_ShowString(60U,
+                   UI_HEADER_TITLE_Y,
+                   (const u8 *)" One",
+                   WHITE,
+                   UI_PRODUCT_HEADER_COLOR,
+                   UI_UTF8_FONT_SIZE,
+                   0);
+}
+
+static const u8 s_ui_wifi_icon_bits[] =
+{
+    0x03, 0xC0,
+    0x0C, 0x30,
+    0x10, 0x08,
+    0x03, 0xC0,
+    0x04, 0x20,
+    0x08, 0x10,
+    0x01, 0x80,
+    0x02, 0x40,
+    0x00, 0x00,
+    0x00, 0x00,
+    0x00, 0x00,
+    0x00, 0x00
+};
+
+static const u8 s_ui_bt_icon_bits[] =
+{
+    0x18, 0x00,
+    0x1C, 0x00,
+    0x1A, 0x00,
+    0x19, 0x00,
+    0x1A, 0x00,
+    0x1C, 0x00,
+    0x18, 0x00,
+    0x1C, 0x00,
+    0x1A, 0x00,
+    0x19, 0x00,
+    0x1A, 0x00,
+    0x1C, 0x00,
+    0x18, 0x00,
+    0x00, 0x00
+};
+
+static void ui_renderer_draw_bluetooth_state_badge(uint16_t x, uint16_t y, uint16_t color)
+{
+    LCD_Fill((uint16_t)(x + 7U),
+             (uint16_t)(y + 9U),
+             (uint16_t)(x + 9U),
+             (uint16_t)(y + 11U),
+             color);
+}
+
+static void ui_renderer_draw_product_status_bar(void)
+{
+    LCD_Fill(0U, 0U, LCD_W - 1U, UI_HEADER_HEIGHT - 1U, UI_PRODUCT_HEADER_COLOR);
+    ui_renderer_draw_brand_text();
+    (void)ui_renderer_draw_header_status_right(UI_PRODUCT_HEADER_COLOR);
+    LCD_DrawLine(0U, UI_HEADER_HEIGHT, LCD_W - 1U, UI_HEADER_HEIGHT, UI_PRODUCT_PANEL_EDGE_COLOR);
+}
 
 static uint16_t ui_renderer_utf8_text_pixel_width(const char *text, uint16_t font_size)
 {
@@ -202,19 +386,39 @@ static void ui_renderer_draw_battery_icon(uint16_t x, uint16_t y, uint8_t percen
 
 static void ui_renderer_draw_wifi_icon(uint16_t x, uint16_t y, uint16_t color)
 {
-    LCD_DrawLine((uint16_t)(x + 1U), (uint16_t)(y + 4U), (uint16_t)(x + 7U), y, color);
-    LCD_DrawLine((uint16_t)(x + 7U), y, (uint16_t)(x + 13U), (uint16_t)(y + 4U), color);
-    LCD_DrawLine((uint16_t)(x + 2U), (uint16_t)(y + 5U), (uint16_t)(x + 7U), (uint16_t)(y + 1U), color);
-    LCD_DrawLine((uint16_t)(x + 7U), (uint16_t)(y + 1U), (uint16_t)(x + 12U), (uint16_t)(y + 5U), color);
+    LCD_DrawMonoBitmap(x,
+                       y,
+                       s_ui_wifi_icon_bits,
+                       UI_HEADER_WIFI_WIDTH,
+                       UI_HEADER_WIFI_HEIGHT,
+                       color,
+                       UI_PRODUCT_HEADER_COLOR,
+                       1U);
+}
 
-    LCD_DrawLine((uint16_t)(x + 3U), (uint16_t)(y + 7U), (uint16_t)(x + 7U), (uint16_t)(y + 4U), color);
-    LCD_DrawLine((uint16_t)(x + 7U), (uint16_t)(y + 4U), (uint16_t)(x + 11U), (uint16_t)(y + 7U), color);
-    LCD_DrawLine((uint16_t)(x + 4U), (uint16_t)(y + 8U), (uint16_t)(x + 7U), (uint16_t)(y + 5U), color);
-    LCD_DrawLine((uint16_t)(x + 7U), (uint16_t)(y + 5U), (uint16_t)(x + 10U), (uint16_t)(y + 8U), color);
+static void ui_renderer_draw_bluetooth_icon(uint16_t x, uint16_t y, uint16_t color)
+{
+    LCD_DrawMonoBitmap(x,
+                       y,
+                       s_ui_bt_icon_bits,
+                       UI_HEADER_BT_WIDTH,
+                       UI_HEADER_BT_HEIGHT,
+                       color,
+                       UI_PRODUCT_HEADER_COLOR,
+                       1U);
+}
 
-    LCD_DrawLine((uint16_t)(x + 5U), (uint16_t)(y + 9U), (uint16_t)(x + 7U), (uint16_t)(y + 7U), color);
-    LCD_DrawLine((uint16_t)(x + 7U), (uint16_t)(y + 7U), (uint16_t)(x + 9U), (uint16_t)(y + 9U), color);
-    LCD_Fill((uint16_t)(x + 6U), (uint16_t)(y + 10U), (uint16_t)(x + 8U), (uint16_t)(y + 11U), color);
+static void ui_renderer_draw_bluetooth_status_icon(uint16_t x,
+                                                   uint16_t y,
+                                                   uint8_t connected)
+{
+    uint16_t icon_color = (connected != 0U) ? UI_PRODUCT_CYAN_COLOR : UI_PRODUCT_DIM_COLOR;
+
+    ui_renderer_draw_bluetooth_icon(x, y, icon_color);
+    if (connected != 0U)
+    {
+        ui_renderer_draw_bluetooth_state_badge(x, y, UI_PRODUCT_SUCCESS_COLOR);
+    }
 }
 
 static uint16_t ui_renderer_draw_header_status_right(uint16_t header_color)
@@ -225,6 +429,7 @@ static uint16_t ui_renderer_draw_header_status_right(uint16_t header_color)
     uint16_t percent_width = 0U;
     uint16_t percent_x = 0U;
     uint16_t battery_left = 0U;
+    uint16_t icon_left = 0U;
 
     esp_host_get_status_copy(&host_status);
     snprintf(percent_text, sizeof(percent_text), "%u%%", battery_monitor_get_percent());
@@ -240,15 +445,23 @@ static uint16_t ui_renderer_draw_header_status_right(uint16_t header_color)
 
     battery_left = (uint16_t)(percent_x - UI_HEADER_STATUS_GAP - UI_HEADER_BATTERY_WIDTH - UI_HEADER_BATTERY_TIP_WIDTH);
     ui_renderer_draw_battery_icon(battery_left, 9U, battery_monitor_get_percent(), header_color);
+    icon_left = battery_left;
 
     if (host_status.wifi_connected != 0U)
     {
-        uint16_t wifi_left = (uint16_t)(battery_left - UI_HEADER_STATUS_GAP - UI_HEADER_WIFI_WIDTH);
+        uint16_t wifi_left = (uint16_t)(icon_left - UI_HEADER_STATUS_GAP - UI_HEADER_WIFI_WIDTH);
         ui_renderer_draw_wifi_icon(wifi_left, 8U, WHITE);
-        return wifi_left;
+        icon_left = wifi_left;
     }
 
-    return battery_left;
+    if (host_status.ble_enabled != 0U)
+    {
+        uint16_t bt_left = (uint16_t)(icon_left - UI_HEADER_STATUS_GAP - UI_HEADER_BT_WIDTH);
+        ui_renderer_draw_bluetooth_status_icon(bt_left, 7U, host_status.ble_connected);
+        icon_left = bt_left;
+    }
+
+    return icon_left;
 }
 
 static void ui_renderer_build_header_path(char *path_buffer,
@@ -327,8 +540,13 @@ const char *ui_renderer_localize(const char *text)
     if (strcmp(text, "Thermal") == 0) return "\xE7\x83\xAD\xE6\x88\x90\xE5\x83\x8F";
     if (strcmp(text, "Update") == 0) return "\xE7\xB3\xBB\xE7\xBB\x9F\xE6\x9B\xB4\xE6\x96\xB0";
     if (strcmp(text, "WiFi") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE7\xBD\x91\xE7\xBB\x9C";
+    if (strcmp(text, "Wireless") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE8\xBF\x9E\xE6\x8E\xA5";
     if (strcmp(text, "WiFi(KEY6)") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE7\xBD\x91\xE7\xBB\x9C\x20\xE9\x94\xAE\x36";
     if (strcmp(text, "WiFi...") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE7\xBD\x91\xE7\xBB\x9C\x2E\x2E\x2E";
+    if (strcmp(text, "Bluetooth") == 0) return "\xE8\x93\x9D\xE7\x89\x99\xE8\xBF\x9E\xE6\x8E\xA5";
+    if (strcmp(text, "Bluetooth...") == 0) return "\xE8\x93\x9D\xE7\x89\x99\xE8\xBF\x9E\xE6\x8E\xA5\xE4\xB8\xAD";
+    if (strcmp(text, "Server") == 0) return "\xE4\xBA\x91\xE7\xAB\xAF\xE8\xBF\x9E\xE6\x8E\xA5";
+    if (strcmp(text, "Server...") == 0) return "\xE4\xBA\x91\xE7\xAB\xAF\xE8\xBF\x9E\xE6\x8E\xA5\xE4\xB8\xAD";
     if (strcmp(text, "Power") == 0) return "\xE7\x94\xB5\xE6\xBA\x90\xE7\xAE\xA1\xE7\x90\x86";
     if (strcmp(text, "System") == 0) return "\xE7\xB3\xBB\xE7\xBB\x9F\xE8\xAE\xBE\xE7\xBD\xAE";
 
@@ -471,11 +689,20 @@ const char *ui_renderer_localize(const char *text)
 
     if (strcmp(text, "Infrared Thermal") == 0) return "\xE5\x8A\x9F\xE8\x83\xBD\xE4\xB8\xBB\xE9\xA1\xB5";
     if (strcmp(text, "Function Home") == 0) return "\xE5\x8A\x9F\xE8\x83\xBD\xE4\xB8\xBB\xE9\xA1\xB5";
-    if (strcmp(text, "Live Measure") == 0) return "\xE5\xAE\x9E\xE6\x97\xB6\xE6\xB5\x8B\xE6\xB8\xA9";
-    if (strcmp(text, "Check Version") == 0) return "\xE6\xA3\x80\xE6\x9F\xA5\xE7\x89\x88\xE6\x9C\xAC";
-    if (strcmp(text, "Connection Status") == 0) return "\xE8\xBF\x9E\xE6\x8E\xA5\xE7\x8A\xB6\xE6\x80\x81";
-    if (strcmp(text, "Power Profile") == 0) return "\xE7\x94\xB5\xE6\xBA\x90\xE6\xA8\xA1\xE5\xBC\x8F";
-    if (strcmp(text, "Select Feature") == 0) return "\xE9\x80\x89\xE6\x8B\xA9\xE5\x8A\x9F\xE8\x83\xBD\xE8\xBF\x9B\xE5\x85\xA5\xE5\xAF\xB9\xE5\xBA\x94\xE9\xA1\xB5\xE9\x9D\xA2";
+    if (strcmp(text, "Live Measure") == 0) return "\xE5\xAE\x9E\xE6\x97\xB6\xE6\xB5\x8B\xE6\xB8\xA9\xE7\x94\xBB\xE9\x9D\xA2";
+    if (strcmp(text, "Check Version") == 0) return "\xE7\x89\x88\xE6\x9C\xAC\xE6\xA3\x80\xE6\x9F\xA5";
+    if (strcmp(text, "Connection Status") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE7\x8A\xB6\xE6\x80\x81\x2F\xE4\xBA\x91\xE7\xAB\xAF\xE7\x8A\xB6\xE6\x80\x81";
+    if (strcmp(text, "Power Profile") == 0) return "\xE6\xA8\xA1\xE5\xBC\x8F\x2F\xE6\x81\xAF\xE5\xB1\x8F\x2F\xE7\x9C\x81\xE7\x94\xB5";
+    if (strcmp(text, "Select Feature") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\x2F\xE6\x98\xBE\xE7\xA4\xBA\x2F\xE5\x8F\x82\xE6\x95\xB0";
+    if (strcmp(text, "Device Entry") == 0) return "\xE8\xAE\xBE\xE5\xA4\x87\xE5\x8A\x9F\xE8\x83\xBD\xE5\x85\xA5\xE5\x8F\xA3";
+    if (strcmp(text, "Live Thermal View") == 0) return "\xE5\xAE\x9E\xE6\x97\xB6\xE6\xB5\x8B\xE6\xB8\xA9\xE7\x94\xBB\xE9\x9D\xA2";
+    if (strcmp(text, "Check Version / Upgrade") == 0) return "\xE6\xA3\x80\xE6\x9F\xA5\xE7\x89\x88\xE6\x9C\xAC\x20\x2F\x20\xE5\x9B\xBA\xE4\xBB\xB6\xE5\x8D\x87\xE7\xBA\xA7";
+    if (strcmp(text, "Wi-Fi / BLE / Cloud") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE7\xBD\x91\xE7\xBB\x9C\x20\x2F\x20\xE8\x93\x9D\xE7\x89\x99\x20\x2F\x20\xE4\xBA\x91\xE7\xAB\xAF";
+    if (strcmp(text, "Mode / Screen / Save") == 0) return "\xE6\xA8\xA1\xE5\xBC\x8F\x20\x2F\x20\xE6\x81\xAF\xE5\xB1\x8F\x20\x2F\x20\xE7\x9C\x81\xE7\x94\xB5";
+    if (strcmp(text, "Debug / Display / Params") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\x20\x2F\x20\xE6\x98\xBE\xE7\xA4\xBA\x20\x2F\x20\xE5\x8F\x82\xE6\x95\xB0";
+    if (strcmp(text, "Check Version / Firmware OTA") == 0) return "\xE6\xA3\x80\xE6\x9F\xA5\xE7\x89\x88\xE6\x9C\xAC\x20\x2F\x20\xE5\x9B\xBA\xE4\xBB\xB6\xE5\x8D\x87\xE7\xBA\xA7";
+    if (strcmp(text, "Wi-Fi / Bluetooth / Server") == 0) return "\xE6\x97\xA0\xE7\xBA\xBF\xE7\xBD\x91\xE7\xBB\x9C\x20\x2F\x20\xE8\x93\x9D\xE7\x89\x99\x20\x2F\x20\xE4\xBA\x91\xE7\xAB\xAF\xE7\x8A\xB6\xE6\x80\x81";
+    if (strcmp(text, "Debug / Advanced Tools") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\x20\x2F\x20\xE5\xB7\xA5\xE5\x85\xB7";
 
     return text;
 }
@@ -543,6 +770,62 @@ void ui_renderer_draw_header_path_hint(const char *parent_title,
     ui_renderer_draw_header_path(parent_title, child_title, header_color);
 }
 
+void ui_renderer_draw_product_background(void)
+{
+    app_display_runtime_lock();
+    LCD_Fill(0U, 0U, LCD_W - 1U, LCD_H - 1U, UI_PRODUCT_BG_COLOR);
+    ui_renderer_draw_product_status_bar();
+    ui_renderer_draw_product_grid((uint16_t)(UI_HEADER_HEIGHT + 4U), LCD_H - 1U);
+    ui_renderer_draw_product_circuit_lines();
+    app_display_runtime_unlock();
+}
+
+void ui_renderer_draw_page_intro(const char *title,
+                                 const char *subtitle,
+                                 uint16_t accent_color)
+{
+    const char *display_title = ui_renderer_localize(title);
+    const char *display_subtitle = ui_renderer_localize(subtitle);
+
+    app_display_runtime_lock();
+    LCD_Fill(UI_PRODUCT_INTRO_BAR_LEFT,
+             UI_PRODUCT_INTRO_BAR_TOP,
+             UI_PRODUCT_INTRO_BAR_RIGHT,
+             UI_PRODUCT_INTRO_BAR_BOTTOM,
+             accent_color);
+
+    if (display_title != 0 && display_title[0] != '\0')
+    {
+        LCD_ShowUTF8String(UI_PRODUCT_INTRO_TITLE_X,
+                           UI_PRODUCT_INTRO_TITLE_Y,
+                           display_title,
+                           WHITE,
+                           UI_PRODUCT_BG_COLOR,
+                           UI_UTF8_FONT_SIZE,
+                           0);
+    }
+
+    if (display_subtitle != 0 && display_subtitle[0] != '\0')
+    {
+        LCD_ShowUTF8String(UI_PRODUCT_INTRO_SUBTITLE_X,
+                           UI_PRODUCT_INTRO_SUBTITLE_Y,
+                           display_subtitle,
+                           UI_PRODUCT_SUBTEXT_COLOR,
+                           UI_PRODUCT_BG_COLOR,
+                           UI_UTF8_FONT_SIZE,
+                           0);
+    }
+    app_display_runtime_unlock();
+}
+
+void ui_renderer_draw_product_page(const char *title,
+                                   const char *subtitle,
+                                   uint16_t accent_color)
+{
+    ui_renderer_draw_product_background();
+    ui_renderer_draw_page_intro(title, subtitle, accent_color);
+}
+
 void ui_renderer_draw_footer(const char *line1, const char *line2)
 {
     app_display_runtime_lock();
@@ -573,11 +856,19 @@ void ui_renderer_draw_value_row(uint16_t y,
                                 uint16_t value_color,
                                 uint16_t back_color)
 {
-    app_display_runtime_lock();
-    LCD_Fill(8, y, LCD_W - 8U, (uint16_t)(y + UI_ROW_HEIGHT - 2U), back_color);
+    uint16_t row_top = y;
+    uint16_t row_bottom = (uint16_t)(y + UI_ROW_HEIGHT - 2U);
+    (void)back_color;
 
-    ui_renderer_draw_text(UI_TEXT_LEFT_X, y, label, BLACK, back_color);
-    ui_renderer_draw_text(UI_VALUE_X, y, value, value_color, back_color);
+    app_display_runtime_lock();
+    LCD_Fill(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, UI_PRODUCT_PANEL_COLOR);
+    LCD_DrawRectangle(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, UI_PRODUCT_PANEL_EDGE_COLOR);
+    ui_renderer_draw_text(UI_PRODUCT_ROW_TEXT_LEFT, (uint16_t)(y + 4U), label, WHITE, UI_PRODUCT_PANEL_COLOR);
+    ui_renderer_draw_text_right(UI_PRODUCT_ROW_VALUE_RIGHT,
+                                (uint16_t)(y + 4U),
+                                value,
+                                ui_renderer_theme_value_color(value_color),
+                                UI_PRODUCT_PANEL_COLOR);
     app_display_runtime_unlock();
 }
 
@@ -587,18 +878,30 @@ void ui_renderer_draw_list_item(uint16_t y,
                                 uint8_t accent,
                                 uint16_t back_color)
 {
-    uint16_t row_color = back_color;
-    uint16_t text_color = BLACK;
+    uint16_t row_top = y;
+    uint16_t row_bottom = (uint16_t)(y + UI_ROW_HEIGHT - 2U);
+    uint16_t row_color = UI_PRODUCT_PANEL_COLOR;
+    uint16_t edge_color = UI_PRODUCT_PANEL_EDGE_COLOR;
+    uint16_t text_color = WHITE;
+    uint16_t arrow_color = UI_PRODUCT_SUBTEXT_COLOR;
+    (void)accent;
+    (void)back_color;
 
     if (selected != 0U)
     {
-        row_color = accent != 0U ? LBBLUE : LGRAYBLUE;
+        row_color = UI_PRODUCT_ACCENT_COLOR;
+        edge_color = UI_PRODUCT_ACCENT_EDGE_COLOR;
         text_color = WHITE;
+        arrow_color = WHITE;
     }
 
     app_display_runtime_lock();
-    LCD_Fill(8, y, LCD_W - 8U, (uint16_t)(y + UI_ROW_HEIGHT - 2U), row_color);
-    ui_renderer_draw_text(UI_ITEM_LEFT_X, y, label, text_color, row_color);
+    LCD_Fill(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, row_color);
+    LCD_DrawRectangle(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, edge_color);
+    ui_renderer_draw_text((uint16_t)(UI_ITEM_LEFT_X + 8U), (uint16_t)(y + 4U), label, text_color, row_color);
+    ui_renderer_draw_product_chevron((uint16_t)(UI_PRODUCT_ROW_RIGHT - 18U),
+                                     (uint16_t)(y + 5U),
+                                     arrow_color);
     app_display_runtime_unlock();
 }
 
@@ -608,22 +911,32 @@ void ui_renderer_draw_toggle_item(uint16_t y,
                                   uint8_t selected,
                                   uint16_t back_color)
 {
-    const char *value_text = (enabled != 0U) ? "\xE5\xBC\x80" : "\xE5\x85\xB3";
-    uint16_t row_color = back_color;
-    uint16_t text_color = BLACK;
-    uint16_t value_color = (enabled != 0U) ? GREEN : RED;
+    const char *value_text = (enabled != 0U) ? "ON" : "OFF";
+    uint16_t row_top = y;
+    uint16_t row_bottom = (uint16_t)(y + UI_ROW_HEIGHT - 2U);
+    uint16_t row_color = UI_PRODUCT_PANEL_COLOR;
+    uint16_t edge_color = UI_PRODUCT_PANEL_EDGE_COLOR;
+    uint16_t text_color = WHITE;
+    uint16_t value_color = (enabled != 0U) ? UI_PRODUCT_SUCCESS_COLOR : UI_PRODUCT_DIM_COLOR;
+    (void)back_color;
 
     if (selected != 0U)
     {
-        row_color = LGRAYBLUE;
+        row_color = UI_PRODUCT_ACCENT_COLOR;
+        edge_color = UI_PRODUCT_ACCENT_EDGE_COLOR;
         text_color = WHITE;
         value_color = WHITE;
     }
 
     app_display_runtime_lock();
-    LCD_Fill(8, y, LCD_W - 8U, (uint16_t)(y + UI_ROW_HEIGHT - 2U), row_color);
-    ui_renderer_draw_text(UI_ITEM_LEFT_X, y, label, text_color, row_color);
-    ui_renderer_draw_text(UI_ITEM_VALUE_X, y, value_text, value_color, row_color);
+    LCD_Fill(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, row_color);
+    LCD_DrawRectangle(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, edge_color);
+    ui_renderer_draw_text((uint16_t)(UI_ITEM_LEFT_X + 8U), (uint16_t)(y + 4U), label, text_color, row_color);
+    ui_renderer_draw_text_right(UI_PRODUCT_ROW_VALUE_RIGHT,
+                                (uint16_t)(y + 4U),
+                                value_text,
+                                value_color,
+                                row_color);
     app_display_runtime_unlock();
 }
 
@@ -633,21 +946,31 @@ void ui_renderer_draw_option_item(uint16_t y,
                                   uint8_t selected,
                                   uint16_t back_color)
 {
-    uint16_t row_color = back_color;
-    uint16_t text_color = BLACK;
-    uint16_t value_color = DARKBLUE;
+    uint16_t row_top = y;
+    uint16_t row_bottom = (uint16_t)(y + UI_ROW_HEIGHT - 2U);
+    uint16_t row_color = UI_PRODUCT_PANEL_COLOR;
+    uint16_t edge_color = UI_PRODUCT_PANEL_EDGE_COLOR;
+    uint16_t text_color = WHITE;
+    uint16_t value_color = UI_PRODUCT_SUBTEXT_COLOR;
+    (void)back_color;
 
     if (selected != 0U)
     {
-        row_color = LGRAYBLUE;
+        row_color = UI_PRODUCT_ACCENT_COLOR;
+        edge_color = UI_PRODUCT_ACCENT_EDGE_COLOR;
         text_color = WHITE;
         value_color = WHITE;
     }
 
     app_display_runtime_lock();
-    LCD_Fill(8, y, LCD_W - 8U, (uint16_t)(y + UI_ROW_HEIGHT - 2U), row_color);
-    ui_renderer_draw_text(UI_ITEM_LEFT_X, y, label, text_color, row_color);
-    ui_renderer_draw_text((uint16_t)(UI_ITEM_VALUE_X - 28U), y, value, value_color, row_color);
+    LCD_Fill(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, row_color);
+    LCD_DrawRectangle(UI_PRODUCT_ROW_LEFT, row_top, UI_PRODUCT_ROW_RIGHT, row_bottom, edge_color);
+    ui_renderer_draw_text((uint16_t)(UI_ITEM_LEFT_X + 8U), (uint16_t)(y + 4U), label, text_color, row_color);
+    ui_renderer_draw_text_right(UI_PRODUCT_ROW_VALUE_RIGHT,
+                                (uint16_t)(y + 4U),
+                                value,
+                                value_color,
+                                row_color);
     app_display_runtime_unlock();
 }
 
