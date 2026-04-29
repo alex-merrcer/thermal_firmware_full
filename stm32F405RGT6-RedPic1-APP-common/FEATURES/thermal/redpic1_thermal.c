@@ -79,6 +79,7 @@ static uint8_t  s_overlay_bar_pending_dirty = 1U;                              /
 static uint8_t  s_overlay_bar_dirty_reason_mask = REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_FORCE; ///< 当前底栏脏原因掩码
 
 static CCMRAM uint8_t s_diag_pattern_frame[REDPIC1_THERMAL_PIXEL_COUNT];       ///< 诊断测试图案灰度数据 (CCM RAM)
+static redpic1_thermal_snapshot_t s_latest_snapshot;
 
 #define REDPIC1_THERMAL_UI_RGB565(r, g, b) ((uint16_t)((((uint16_t)(r) & 0xF8U) << 8) | \
                                                        (((uint16_t)(g) & 0xFCU) << 3) | \
@@ -212,6 +213,59 @@ static void redpic1_thermal_format_overlay_temp(char *buffer,uint16_t buffer_len
     }
 
     snprintf(buffer, buffer_len, "%ld.%ld", (long)whole, (long)frac);
+}
+
+static int16_t redpic1_thermal_temp_to_x10(float temp)
+{
+    float scaled = temp * 10.0f;
+
+    if (scaled >= 0.0f)
+    {
+        scaled += 0.5f;
+    }
+    else
+    {
+        scaled -= 0.5f;
+    }
+
+    if (scaled > 32767.0f)
+    {
+        scaled = 32767.0f;
+    }
+    else if (scaled < -32768.0f)
+    {
+        scaled = -32768.0f;
+    }
+
+    return (int16_t)scaled;
+}
+
+static void redpic1_thermal_update_latest_snapshot(const float *frame_data,
+                                                   float min_temp,
+                                                   float max_temp,
+                                                   float center_temp,
+                                                   uint32_t frame_id,
+                                                   uint32_t capture_tick_ms)
+{
+    uint16_t index = 0U;
+
+    if (frame_data == 0)
+    {
+        return;
+    }
+
+    redpic1_thermal_enter_critical();
+    s_latest_snapshot.valid = 1U;
+    s_latest_snapshot.frame_id = frame_id;
+    s_latest_snapshot.timestamp_ms = capture_tick_ms;
+    s_latest_snapshot.min_x10 = redpic1_thermal_temp_to_x10(min_temp);
+    s_latest_snapshot.max_x10 = redpic1_thermal_temp_to_x10(max_temp);
+    s_latest_snapshot.center_x10 = redpic1_thermal_temp_to_x10(center_temp);
+    for (index = 0U; index < REDPIC1_THERMAL_SNAPSHOT_PIXEL_COUNT; ++index)
+    {
+        s_latest_snapshot.pixels_x10[index] = redpic1_thermal_temp_to_x10(frame_data[index]);
+    }
+    redpic1_thermal_exit_critical();
 }
 
 /**
@@ -684,6 +738,7 @@ void redpic1_thermal_init(void)
     s_overlayHold = 0U;
     s_display_paused = 0U;
     s_runtime_overlay_visible = 1U;
+    memset(&s_latest_snapshot, 0, sizeof(s_latest_snapshot));
     redpic1_thermal_reset_bottom_bar_cache();
     set_color_mode(s_colorMode);
     redpic1_thermal_apply_refresh_rate_internal(s_refreshRate, 1U);
@@ -855,6 +910,12 @@ void redpic1_thermal_step(void)
                                                          frame_min_temp,
                                                          frame_max_temp,
                                                          frame_center_temp);
+        redpic1_thermal_update_latest_snapshot(back_slot->temp_frame,
+                                               frame_min_temp,
+                                               frame_max_temp,
+                                               frame_center_temp,
+                                               back_slot->frame_seq,
+                                               capture_tick_ms);
 
         redpic1_thermal_publish_back_slot(back_slot);
         if (s_display_paused == 0U && s_overlayHold == 0U)
@@ -1068,4 +1129,23 @@ void redpic1_thermal_set_overlay_hold(uint8_t enabled)
     {
         redpic1_thermal_cancel_pending_present_and_clear_submit();
     }
+}
+
+uint8_t redpic1_thermal_copy_latest_snapshot(redpic1_thermal_snapshot_t *out_snapshot)
+{
+    if (out_snapshot == 0)
+    {
+        return 0U;
+    }
+
+    redpic1_thermal_enter_critical();
+    if (s_latest_snapshot.valid == 0U)
+    {
+        redpic1_thermal_exit_critical();
+        return 0U;
+    }
+
+    memcpy(out_snapshot, &s_latest_snapshot, sizeof(*out_snapshot));
+    redpic1_thermal_exit_critical();
+    return 1U;
 }

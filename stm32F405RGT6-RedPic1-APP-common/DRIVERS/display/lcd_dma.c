@@ -97,9 +97,10 @@ typedef enum {
 #define LCD_DMA_THERMAL_CROSS_CENTER_PRODUCT LCD_DMA_RGB565(255U, 255U, 255U)
 #define THERMAL_ENABLE_OLD_PALETTE_MAP       1
 #define THERMAL_ENABLE_TONE_LUT              1
-#define THERMAL_TONE_LUT_START_GRAY          180U
-#define THERMAL_TONE_LUT_INPUT_SPAN          75U
-#define THERMAL_TONE_LUT_OUTPUT_SPAN         70U
+#define THERMAL_TONE_LUT_START_GRAY          158U
+#define THERMAL_TONE_LUT_INPUT_SPAN          100U
+#define THERMAL_TONE_LUT_OUTPUT_SPAN         82U
+#define THERMAL_TONE_LUT_MAX_GRAY            238U
 #define THERMAL_VISIBLE_PALETTE_WHITE_HOT    0xFEU
 #define THERMAL_VISIBLE_PALETTE_BLACK_HOT    0xFFU
 #define THERMAL_VISIBLE_PALETTE_COUNT        5U
@@ -1262,9 +1263,9 @@ static void thermal_build_tone_lut(void)
             uint16_t mapped = (uint16_t)(THERMAL_TONE_LUT_START_GRAY +
                                          ((delta * THERMAL_TONE_LUT_OUTPUT_SPAN) / THERMAL_TONE_LUT_INPUT_SPAN));
 
-            if (mapped > 255U)
+            if (mapped > THERMAL_TONE_LUT_MAX_GRAY)
             {
-                mapped = 255U;
+                mapped = THERMAL_TONE_LUT_MAX_GRAY;
             }
 
             s_thermal_tone_lut[i] = (uint8_t)mapped;

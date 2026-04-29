@@ -23,11 +23,14 @@
 #define THERMAL_ENABLE_GRAY_SHARPEN                   1
 #define THERMAL_ENABLE_PERCENTILE_WINDOW              1
 #define THERMAL_VISUAL_PERCENTILE_LOW_PERMILLE        20U
-#define THERMAL_VISUAL_PERCENTILE_HIGH_PERMILLE       980U
+#define THERMAL_VISUAL_PERCENTILE_HIGH_PERMILLE       995U
 #define THERMAL_VISUAL_SHARPEN_NUM                    2
 #define THERMAL_VISUAL_SHARPEN_DEN                    5
 #define THERMAL_VISUAL_SHARPEN_MIN_DIFF               2
 #define THERMAL_VISUAL_SHARPEN_MAX_DIFF               24
+#define THERMAL_VISUAL_SHARPEN_HIGHLIGHT_GUARD        220
+#define THERMAL_VISUAL_PERCENTILE_HEADROOM_RATIO      0.08f
+#define THERMAL_VISUAL_PERCENTILE_HEADROOM_MIN_C      0.4f
 
 static float s_display_min_temp = 0.0f;
 static float s_display_max_temp = 0.0f;
@@ -209,14 +212,23 @@ static void redpic1_thermal_visual_get_percentile_window(const float *frame_data
                                          1000UL);
         float percentile_min = s_percentile_sort_buffer[low_index];
         float percentile_max = s_percentile_sort_buffer[high_index];
+        float span = 0.0f;
+        float headroom = 0.0f;
 
         if (high_index <= low_index || percentile_max <= percentile_min)
         {
             return;
         }
 
+        span = percentile_max - percentile_min;
+        headroom = span * THERMAL_VISUAL_PERCENTILE_HEADROOM_RATIO;
+        if (headroom < THERMAL_VISUAL_PERCENTILE_HEADROOM_MIN_C)
+        {
+            headroom = THERMAL_VISUAL_PERCENTILE_HEADROOM_MIN_C;
+        }
+
         *out_window_min_temp = percentile_min;
-        *out_window_max_temp = percentile_max;
+        *out_window_max_temp = percentile_max + headroom;
     }
 #else
     (void)frame_data;
@@ -385,6 +397,11 @@ static void redpic1_thermal_visual_sharpen_gray_frame(uint8_t *gray_frame)
             int32_t sharp = 0;
 
             if (abs_diff < THERMAL_VISUAL_SHARPEN_MIN_DIFF)
+            {
+                continue;
+            }
+
+            if (center >= THERMAL_VISUAL_SHARPEN_HIGHLIGHT_GUARD && diff > 0)
             {
                 continue;
             }

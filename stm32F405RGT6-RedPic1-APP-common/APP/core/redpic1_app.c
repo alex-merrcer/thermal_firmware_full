@@ -27,6 +27,7 @@
 #include "power_manager.h"
 #include "redpic1_thermal.h"
 #include "rtc_lp_service.h"
+#include "storage_service.h"
 #include "sys.h"
 #include "ui_manager.h"
 #include "uart_rx_ring.h"
@@ -1003,6 +1004,7 @@ void app_rtos_runtime_init(void)
     uart_init(115200);
     ota_service_init();
     settings_service_init();
+    storage_service_init();
     app_force_manual_wifi_boot();
     battery_monitor_init();
     low_power_runtime_init();

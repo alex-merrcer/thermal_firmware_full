@@ -109,6 +109,19 @@
     #define REDPIC1_THERMAL_KEY2_ENTRY_GUARD_MS 220UL
 #endif
 
+#define REDPIC1_THERMAL_SNAPSHOT_PIXEL_COUNT 768U
+
+typedef struct
+{
+    uint8_t valid;
+    uint32_t frame_id;
+    uint32_t timestamp_ms;
+    int16_t min_x10;
+    int16_t max_x10;
+    int16_t center_x10;
+    int16_t pixels_x10[REDPIC1_THERMAL_SNAPSHOT_PIXEL_COUNT];
+} redpic1_thermal_snapshot_t;
+
 #if (REDPIC1_THERMAL_STAGE6R_ENABLE == 0U)
     #if (REDPIC1_THERMAL_STAGE6R_1_ENABLE != 0U) || \
         (REDPIC1_THERMAL_STAGE6R_2_ENABLE != 0U) || \
@@ -145,5 +158,6 @@ void redpic1_thermal_suspend(void);
 void redpic1_thermal_resume(void);
 void redpic1_thermal_restore_bus_after_stop(void);
 void redpic1_thermal_set_overlay_hold(uint8_t enabled);
+uint8_t redpic1_thermal_copy_latest_snapshot(redpic1_thermal_snapshot_t *out_snapshot);
 
 #endif

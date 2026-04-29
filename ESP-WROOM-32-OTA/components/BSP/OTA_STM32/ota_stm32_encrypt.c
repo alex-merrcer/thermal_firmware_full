@@ -1,17 +1,16 @@
-﻿#include "ota_stm32_encrypt.h"
+﻿#ifndef __USART_H
+#define __USART_H
+#include "stdio.h"	
+#include "stm32f4xx_conf.h"
+#include "sys.h" 
 
-#define TAG OTA_STM32_TAG
+#define EN_USART1_RX 1
 
-#if __has_include("ota_security_secrets.h")
-#include "ota_security_secrets.h"
-#define OTA_HAS_EXTERNAL_AES_KEY   (1)
+//如果想串口中断接收，请不要注释以下宏定义
+void uart_init(u32 bound);
 #endif
 
-#if defined(OTA_HAS_EXTERNAL_AES_KEY)
-#ifndef OTA_SECURITY_AES_KEY_ID_TEXT
-#define OTA_SECURITY_AES_KEY_ID_TEXT "prod-env-aes256"
-#endif
-#else
+
 #define OTA_SECURITY_AES_KEY_ID_TEXT "not-configured"
 #endif
 
