@@ -27,8 +27,10 @@ void storage_service_init(void);
 uint8_t storage_service_mount(void);
 uint8_t storage_service_is_mounted(void);
 storage_status_t storage_service_get_info(storage_info_t *info);
-storage_status_t storage_service_test_file(void);
+storage_status_t storage_service_query_capacity(storage_info_t *info);
 storage_status_t storage_service_ensure_redpic_dirs(void);
+storage_status_t storage_service_write_test_file(void);
+storage_status_t storage_service_read_test_file(void);
 const char *storage_service_status_text(storage_status_t status);
 
 #endif

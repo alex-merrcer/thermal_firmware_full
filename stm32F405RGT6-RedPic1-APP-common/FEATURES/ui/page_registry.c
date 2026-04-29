@@ -270,7 +270,6 @@ static char s_ota_info_latest_version[BOOT_INFO_VERSION_LEN];
 static char s_ota_info_partition[12];
 static char s_storage_notice_line1[32];
 static char s_storage_notice_line2[32];
-static uint32_t s_storage_last_snapshot_index = 0U;
   static uint8_t s_ota_show_version_rows = 0U;
 static uint8_t s_ota_show_partition_rows = 0U;
 static page_async_state_t s_async_state;
@@ -307,8 +306,10 @@ static const char * const s_system_items[] =
 
 static const char * const s_storage_items[] =
 {
-    "Mount/Test",
-    "Save Snapshot"
+    "Mount",
+    "Capacity",
+    "Write Test",
+    "Read Test"
 };
 
 /* 宸ョ▼椤甸潰鑿滃崟鏂囨湰銆?*/
@@ -357,7 +358,7 @@ static const uint32_t s_power_screen_off_options_ms[] =
     #define SYSTEM_ITEM_BASE_COUNT         2U
     #define SYSTEM_ITEM_MAX_COUNT          3U
 #endif
-#define STORAGE_ITEM_COUNT         2U
+#define STORAGE_ITEM_COUNT         4U
 #define ENGINEERING_ITEM_COUNT     3U
 
 #define HOME_LIST_START_Y          76U
@@ -2140,20 +2141,9 @@ static void storage_page_set_notice(const char *line1, const char *line2)
 static void storage_page_refresh_state(storage_info_t *info)
 {
     storage_info_t local_info;
-    uint32_t latest_index = 0U;
-    storage_status_t index_status = STORAGE_STATUS_NOT_READY;
 
     memset(&local_info, 0, sizeof(local_info));
     (void)storage_service_get_info(&local_info);
-    if (local_info.mounted != 0U)
-    {
-        index_status = snapshot_storage_get_latest_index(&latest_index);
-        if (index_status != STORAGE_STATUS_OK)
-        {
-            latest_index = 0U;
-        }
-    }
-    s_storage_last_snapshot_index = latest_index;
 
     if (info != 0)
     {
@@ -2174,7 +2164,7 @@ static void storage_draw_info_rows(void)
     snprintf(value, sizeof(value), "%s", info.mounted != 0U ? "MOUNTED" : "NOT MOUNTED");
     ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Mount", value, PAGE_UI_CYAN_COLOR, WHITE);
 
-    if (info.mounted != 0U)
+    if (info.total_kb != 0U)
     {
         snprintf(value, sizeof(value), "%lu MB", (unsigned long)(info.total_kb / 1024UL));
     }
@@ -2184,15 +2174,15 @@ static void storage_draw_info_rows(void)
     }
     ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y, "Capacity", value, PAGE_UI_CYAN_COLOR, WHITE);
 
-    if (info.mounted != 0U)
+    if (info.free_kb != 0U)
     {
-        snprintf(value, sizeof(value), "#%06lu", (unsigned long)s_storage_last_snapshot_index);
+        snprintf(value, sizeof(value), "%lu MB", (unsigned long)(info.free_kb / 1024UL));
     }
     else
     {
         snprintf(value, sizeof(value), "--");
     }
-    ui_renderer_draw_value_row(PAGE_INFO_ROW4_Y, "Snapshot", value, PAGE_UI_CYAN_COLOR, WHITE);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW4_Y, "Free", value, PAGE_UI_CYAN_COLOR, WHITE);
 }
 
 static void storage_draw_item(uint8_t index)
@@ -2935,7 +2925,7 @@ static void storage_page_on_leave(ui_page_id_t next_page)
 static void storage_page_on_key(uint8_t key_value)
 {
     storage_status_t status = STORAGE_STATUS_OK;
-    uint32_t saved_index = 0U;
+    storage_info_t info;
     char detail[24];
 
     if (key_value == KEY1_PRES)
@@ -2954,22 +2944,37 @@ static void storage_page_on_key(uint8_t key_value)
     {
         if (s_storage_selected == 0U)
         {
-            status = storage_service_test_file();
-            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Test OK" : "Test failed",
+            status = (storage_service_mount() != 0U) ? STORAGE_STATUS_OK : storage_service_get_info(0);
+            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Mount OK" : "Mount failed",
+                                    storage_service_status_text(status));
+        }
+        else if (s_storage_selected == 1U)
+        {
+            memset(&info, 0, sizeof(info));
+            status = storage_service_query_capacity(&info);
+            if (status == STORAGE_STATUS_OK)
+            {
+                snprintf(detail, sizeof(detail), "%luMB / %luMB",
+                         (unsigned long)(info.free_kb / 1024UL),
+                         (unsigned long)(info.total_kb / 1024UL));
+                storage_page_set_notice("Capacity OK", detail);
+            }
+            else
+            {
+                storage_page_set_notice("Capacity fail", storage_service_status_text(status));
+            }
+        }
+        else if (s_storage_selected == 2U)
+        {
+            status = storage_service_write_test_file();
+            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Write OK" : "Write failed",
                                     storage_service_status_text(status));
         }
         else
         {
-            status = snapshot_storage_save_latest(&saved_index);
-            if (status == STORAGE_STATUS_OK)
-            {
-                snprintf(detail, sizeof(detail), "#%06lu", (unsigned long)saved_index);
-                storage_page_set_notice("Save OK", detail);
-            }
-            else
-            {
-                storage_page_set_notice("Save failed", storage_service_status_text(status));
-            }
+            status = storage_service_read_test_file();
+            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Read OK" : "Read failed",
+                                    storage_service_status_text(status));
         }
 
         ui_manager_force_full_refresh();

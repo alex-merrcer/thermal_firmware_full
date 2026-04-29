@@ -77,7 +77,6 @@ uint8_t storage_service_mount(void)
 {
     DSTATUS disk_status_value = 0;
     FRESULT fr = FR_OK;
-    storage_status_t dir_status = STORAGE_STATUS_OK;
 
     if (s_storage_inited == 0U)
     {
@@ -110,16 +109,7 @@ uint8_t storage_service_mount(void)
 
     s_storage_info.mounted = 1U;
     s_storage_info.last_status = STORAGE_STATUS_OK;
-    (void)storage_service_update_capacity(&s_storage_info);
-
-    dir_status = storage_service_mkdir_if_needed(STORAGE_SERVICE_ROOT_DIR);
-    if (dir_status == STORAGE_STATUS_OK)
-    {
-        dir_status = storage_service_mkdir_if_needed(STORAGE_SERVICE_SNAPSHOT_DIR);
-    }
-
-    s_storage_info.last_status = dir_status;
-    return (dir_status == STORAGE_STATUS_OK) ? 1U : 0U;
+    return 1U;
 }
 
 uint8_t storage_service_is_mounted(void)
@@ -134,17 +124,42 @@ storage_status_t storage_service_get_info(storage_info_t *info)
         storage_service_init();
     }
 
-    if (s_storage_info.mounted != 0U)
-    {
-        s_storage_info.last_status = storage_service_update_capacity(&s_storage_info);
-    }
-
     if (info != 0)
     {
         *info = s_storage_info;
     }
 
     return s_storage_info.last_status;
+}
+
+storage_status_t storage_service_query_capacity(storage_info_t *info)
+{
+    storage_status_t status = STORAGE_STATUS_NOT_READY;
+
+    if (s_storage_inited == 0U)
+    {
+        storage_service_init();
+    }
+
+    if (s_storage_info.mounted == 0U)
+    {
+        s_storage_info.last_status = STORAGE_STATUS_NOT_READY;
+        if (info != 0)
+        {
+            *info = s_storage_info;
+        }
+        return s_storage_info.last_status;
+    }
+
+    status = storage_service_update_capacity(&s_storage_info);
+    s_storage_info.last_status = status;
+
+    if (info != 0)
+    {
+        *info = s_storage_info;
+    }
+
+    return status;
 }
 
 storage_status_t storage_service_ensure_redpic_dirs(void)
@@ -166,17 +181,15 @@ storage_status_t storage_service_ensure_redpic_dirs(void)
     return status;
 }
 
-storage_status_t storage_service_test_file(void)
+storage_status_t storage_service_write_test_file(void)
 {
     FIL file;
     UINT bytes_done = 0U;
     UINT text_len = (UINT)strlen(STORAGE_SERVICE_TEST_TEXT);
-    char readback[24];
     FRESULT fr = FR_OK;
     storage_status_t status = STORAGE_STATUS_OK;
 
     memset(&file, 0, sizeof(file));
-    memset(readback, 0, sizeof(readback));
 
     status = storage_service_ensure_redpic_dirs();
     if (status != STORAGE_STATUS_OK)
@@ -196,6 +209,27 @@ storage_status_t storage_service_test_file(void)
     if (fr != FR_OK || bytes_done != text_len)
     {
         s_storage_info.last_status = STORAGE_STATUS_IO_ERROR;
+        return s_storage_info.last_status;
+    }
+
+    s_storage_info.last_status = STORAGE_STATUS_OK;
+    return STORAGE_STATUS_OK;
+}
+
+storage_status_t storage_service_read_test_file(void)
+{
+    FIL file;
+    UINT bytes_done = 0U;
+    UINT text_len = (UINT)strlen(STORAGE_SERVICE_TEST_TEXT);
+    char readback[24];
+    FRESULT fr = FR_OK;
+
+    memset(&file, 0, sizeof(file));
+    memset(readback, 0, sizeof(readback));
+
+    if (s_storage_info.mounted == 0U)
+    {
+        s_storage_info.last_status = STORAGE_STATUS_NOT_READY;
         return s_storage_info.last_status;
     }
 

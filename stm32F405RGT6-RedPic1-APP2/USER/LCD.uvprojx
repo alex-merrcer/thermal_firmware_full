@@ -677,9 +677,9 @@
           <GroupName>drivers/sdcard</GroupName>
           <Files>
             <File>
-              <FileName>sdio_sdcard.c</FileName>
+              <FileName>sd_card_port_stub.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\SDIO\sdio_sdcard.c</FilePath>
+              <FilePath>..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\storage\sd_card_port_stub.c</FilePath>
             </File>
           </Files>
         </Group>
