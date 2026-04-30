@@ -79,6 +79,7 @@ static void settings_service_load_defaults(device_settings_t *settings)
     settings->low_power_enabled = 1U;
     settings->standby_enabled = DEVICE_SETTINGS_DEFAULT_STANDBY_ENABLED;
     settings->thermal_pause_send_esp_enabled = 1U;
+    settings->key2_snapshot_enabled = 0U;
     settings->power_policy = DEVICE_SETTINGS_DEFAULT_POWER_POLICY;
     settings->screen_off_timeout_ms = DEVICE_SETTINGS_DEFAULT_SCREEN_OFF_TIMEOUT_MS;
     settings->rtc_stop_wake_ms = DEVICE_SETTINGS_DEFAULT_RTC_STOP_WAKE_MS;
@@ -100,6 +101,7 @@ static void settings_service_sanitize(device_settings_t *settings)
     settings->esp32_remote_keys_enabled = (settings->esp32_remote_keys_enabled != 0U) ? 1U : 0U;
     settings->standby_enabled = (settings->standby_enabled != 0U) ? 1U : 0U;
     settings->thermal_pause_send_esp_enabled = (settings->thermal_pause_send_esp_enabled != 0U) ? 1U : 0U;
+    settings->key2_snapshot_enabled = (settings->key2_snapshot_enabled != 0U) ? 1U : 0U;
 
     if ((uint32_t)settings->power_policy >= (uint32_t)POWER_POLICY_COUNT)
     {
@@ -167,6 +169,10 @@ static void settings_blob_from_settings(device_settings_blob_t *blob,
     {
         flags |= DEVICE_SETTINGS_FLAG_THERMAL_PAUSE_SEND_ESP;
     }
+    if (settings->key2_snapshot_enabled != 0U)
+    {
+        flags |= DEVICE_SETTINGS_FLAG_KEY2_SNAPSHOT_ENABLED;
+    }
     if (settings->mqtt_enabled != 0U)
     {
         flags |= DEVICE_SETTINGS_FLAG_MQTT_ENABLED;
@@ -192,6 +198,7 @@ static uint8_t settings_blob_is_valid(const device_settings_blob_t *blob)
 
     if (blob->magic != DEVICE_SETTINGS_BLOB_MAGIC ||
         (blob->version != DEVICE_SETTINGS_BLOB_VERSION &&
+         blob->version != DEVICE_SETTINGS_BLOB_VERSION_V5 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V4 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V3 &&
          blob->version != DEVICE_SETTINGS_BLOB_VERSION_V2 &&
@@ -218,6 +225,7 @@ static void settings_from_blob(device_settings_t *settings, const device_setting
     settings->esp32_debug_screen_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_ESP32_DEBUG_SCREEN) != 0U) ? 1U : 0U;
     settings->esp32_remote_keys_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_ESP32_REMOTE_KEYS) != 0U) ? 1U : 0U;
     settings->thermal_pause_send_esp_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_THERMAL_PAUSE_SEND_ESP) != 0U) ? 1U : 0U;
+    settings->key2_snapshot_enabled = ((blob->flags & DEVICE_SETTINGS_FLAG_KEY2_SNAPSHOT_ENABLED) != 0U) ? 1U : 0U;
     settings->standby_enabled = DEVICE_SETTINGS_DEFAULT_STANDBY_ENABLED;
     settings->screen_off_timeout_ms = blob->screen_off_timeout_ms;
 
@@ -278,6 +286,12 @@ void settings_service_init(void)
             /* V5 makes BLE/cloud user-controlled; keep both disabled by default after migration. */
             s_settings.ble_enabled = 0U;
             s_settings.mqtt_enabled = 0U;
+            should_resave = 1U;
+        }
+        if (blob.version < DEVICE_SETTINGS_BLOB_VERSION)
+        {
+            /* V6 introduces optional KEY2 snapshot, shipped disabled by default. */
+            s_settings.key2_snapshot_enabled = 0U;
             should_resave = 1U;
         }
         if (blob.version != DEVICE_SETTINGS_BLOB_VERSION)

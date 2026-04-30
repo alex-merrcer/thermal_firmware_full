@@ -14,8 +14,10 @@
 #include "lcd_utf8.h"
 #include "lcd_init.h"
 #include "power_manager.h"
+#include "redpic1_app.h"
 #include "MLX90640.h"
 #include "lcd_dma.h"
+#include "snapshot_storage.h"
 #include "thermal_capture.h"
 #include "thermal_cloud.h"
 #include "thermal_frame_slot.h"
@@ -80,6 +82,9 @@ static uint8_t  s_overlay_bar_dirty_reason_mask = REDPIC1_THERMAL_OVERLAY_DIRTY_
 
 static CCMRAM uint8_t s_diag_pattern_frame[REDPIC1_THERMAL_PIXEL_COUNT];       ///< 诊断测试图案灰度数据 (CCM RAM)
 static redpic1_thermal_snapshot_t s_latest_snapshot;
+static uint8_t s_key2_snapshot_pending = 0U;
+static uint8_t s_key2_snapshot_in_progress = 0U;
+static uint8_t s_key2_snapshot_status_visible = 0U;
 
 #define REDPIC1_THERMAL_UI_RGB565(r, g, b) ((uint16_t)((((uint16_t)(r) & 0xF8U) << 8) | \
                                                        (((uint16_t)(g) & 0xFCU) << 3) | \
@@ -116,6 +121,17 @@ typedef struct
 } redpic1_thermal_bottom_bar_view_t;
 
 static redpic1_thermal_bottom_bar_view_t s_overlay_bar_last_view;
+
+typedef enum
+{
+    REDPIC1_THERMAL_SNAPSHOT_STATUS_IDLE = 0,
+    REDPIC1_THERMAL_SNAPSHOT_STATUS_QUEUED,
+    REDPIC1_THERMAL_SNAPSHOT_STATUS_SAVING,
+    REDPIC1_THERMAL_SNAPSHOT_STATUS_OK,
+    REDPIC1_THERMAL_SNAPSHOT_STATUS_FAIL
+} redpic1_thermal_snapshot_status_t;
+
+static redpic1_thermal_snapshot_status_t s_key2_snapshot_status = REDPIC1_THERMAL_SNAPSHOT_STATUS_IDLE;
 
 static uint8_t redpic1_thermal_present_gray_frame(const uint8_t *gray_frame);
 /* ========================================================================= */
@@ -266,6 +282,87 @@ static void redpic1_thermal_update_latest_snapshot(const float *frame_data,
         s_latest_snapshot.pixels_x10[index] = redpic1_thermal_temp_to_x10(frame_data[index]);
     }
     redpic1_thermal_exit_critical();
+}
+
+static uint8_t redpic1_thermal_key2_snapshot_enabled(void)
+{
+    device_settings_t settings;
+
+    memset(&settings, 0, sizeof(settings));
+    app_rtos_settings_copy(&settings);
+    return settings.key2_snapshot_enabled;
+}
+
+static const char *redpic1_thermal_snapshot_status_text(void)
+{
+    switch (s_key2_snapshot_status)
+    {
+    case REDPIC1_THERMAL_SNAPSHOT_STATUS_QUEUED:
+        return "SNAP...";
+    case REDPIC1_THERMAL_SNAPSHOT_STATUS_SAVING:
+        return "SAVING";
+    case REDPIC1_THERMAL_SNAPSHOT_STATUS_OK:
+        return "SHOT OK";
+    case REDPIC1_THERMAL_SNAPSHOT_STATUS_FAIL:
+        return "SHOT ERR";
+    case REDPIC1_THERMAL_SNAPSHOT_STATUS_IDLE:
+    default:
+        return 0;
+    }
+}
+
+static void redpic1_thermal_draw_snapshot_status_overlay(void)
+{
+    const char *text = 0;
+    uint16_t box_left = (uint16_t)(LCD_W - 92U);
+    uint16_t box_top = 4U;
+    uint16_t box_right = (uint16_t)(LCD_W - 4U);
+    uint16_t box_bottom = 19U;
+    uint16_t text_color = WHITE;
+    uint16_t bg_color = REDPIC1_THERMAL_UI_RGB565(8U, 20U, 32U);
+
+    text = redpic1_thermal_snapshot_status_text();
+    if (s_display_paused == 0U || text == 0)
+    {
+        if (s_key2_snapshot_status_visible == 0U)
+        {
+            return;
+        }
+        app_display_runtime_lock();
+        LCD_Fill(box_left, box_top, box_right, box_bottom, BLACK);
+        app_display_runtime_unlock();
+        s_key2_snapshot_status_visible = 0U;
+        return;
+    }
+
+    if (s_key2_snapshot_status == REDPIC1_THERMAL_SNAPSHOT_STATUS_OK)
+    {
+        bg_color = GREEN;
+        text_color = BLACK;
+    }
+    else if (s_key2_snapshot_status == REDPIC1_THERMAL_SNAPSHOT_STATUS_FAIL)
+    {
+        bg_color = RED;
+    }
+    else if (s_key2_snapshot_status == REDPIC1_THERMAL_SNAPSHOT_STATUS_SAVING)
+    {
+        bg_color = REDPIC1_THERMAL_UI_RGB565(255U, 120U, 0U);
+        text_color = BLACK;
+    }
+
+    app_display_runtime_lock();
+    LCD_Fill(box_left, box_top, box_right, box_bottom, bg_color);
+    LCD_ShowString((uint16_t)(box_left + 4U), (uint16_t)(box_top + 2U), (const u8 *)text, text_color, bg_color, 12, 0);
+    app_display_runtime_unlock();
+    s_key2_snapshot_status_visible = 1U;
+}
+
+static void redpic1_thermal_snapshot_status_reset(void)
+{
+    s_key2_snapshot_pending = 0U;
+    s_key2_snapshot_in_progress = 0U;
+    s_key2_snapshot_status = REDPIC1_THERMAL_SNAPSHOT_STATUS_IDLE;
+    redpic1_thermal_draw_snapshot_status_overlay();
 }
 
 /**
@@ -739,6 +836,7 @@ void redpic1_thermal_init(void)
     s_display_paused = 0U;
     s_runtime_overlay_visible = 1U;
     memset(&s_latest_snapshot, 0, sizeof(s_latest_snapshot));
+    redpic1_thermal_snapshot_status_reset();
     redpic1_thermal_reset_bottom_bar_cache();
     set_color_mode(s_colorMode);
     redpic1_thermal_apply_refresh_rate_internal(s_refreshRate, 1U);
@@ -796,6 +894,24 @@ void redpic1_thermal_step(void)
     {
         app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
         return;
+    }
+
+    if (s_display_paused != 0U && s_key2_snapshot_pending != 0U && s_key2_snapshot_in_progress == 0U)
+    {
+        storage_status_t snapshot_status = STORAGE_STATUS_OK;
+        uint32_t saved_index = 0U;
+
+        s_key2_snapshot_in_progress = 1U;
+        s_key2_snapshot_pending = 0U;
+        s_key2_snapshot_status = REDPIC1_THERMAL_SNAPSHOT_STATUS_SAVING;
+        redpic1_thermal_draw_snapshot_status_overlay();
+
+        snapshot_status = snapshot_storage_save_latest(&saved_index);
+        s_key2_snapshot_in_progress = 0U;
+        s_key2_snapshot_status = (snapshot_status == STORAGE_STATUS_OK) ?
+                                 REDPIC1_THERMAL_SNAPSHOT_STATUS_OK :
+                                 REDPIC1_THERMAL_SNAPSHOT_STATUS_FAIL;
+        redpic1_thermal_draw_snapshot_status_overlay();
     }
 
     {
@@ -1032,10 +1148,20 @@ void redpic1_thermal_handle_key(uint8_t key_value)
     case KEY2_PRES:
     {
         uint8_t was_display_paused = s_display_paused;
+        uint8_t key2_snapshot_enabled = redpic1_thermal_key2_snapshot_enabled();
 
         if (power_manager_get_tick_ms() < s_key2_ignore_until_ms)
         {
             break;
+        }
+
+        if (was_display_paused != 0U && key2_snapshot_enabled != 0U)
+        {
+            if (s_key2_snapshot_pending != 0U || s_key2_snapshot_in_progress != 0U)
+            {
+                redpic1_thermal_draw_snapshot_status_overlay();
+                break;
+            }
         }
 
         s_display_paused = (uint8_t)!s_display_paused;
@@ -1046,11 +1172,18 @@ void redpic1_thermal_handle_key(uint8_t key_value)
             {
                 (void)redpic1_thermal_cloud_submit_snapshot_to_esp();
             }
+            if (was_display_paused == 0U && key2_snapshot_enabled != 0U)
+            {
+                s_key2_snapshot_pending = 1U;
+                s_key2_snapshot_status = REDPIC1_THERMAL_SNAPSHOT_STATUS_QUEUED;
+                redpic1_thermal_draw_snapshot_status_overlay();
+            }
         }
         redpic1_thermal_mark_bottom_bar_dirty(REDPIC1_THERMAL_OVERLAY_DIRTY_REASON_PAUSE);
         redpic1_thermal_stage6l3_invalidate_history();
         if (was_display_paused != 0U && s_display_paused == 0U)
         {
+            redpic1_thermal_snapshot_status_reset();
             redpic1_thermal_frame_slot_try_submit_if_possible();
         }
     }
@@ -1080,6 +1213,7 @@ void redpic1_thermal_suspend(void)
 {
     s_runEnabled = 0U;
     redpic1_thermal_apply_refresh_rate(REDPIC1_THERMAL_IDLE_REFRESH_RATE);
+    redpic1_thermal_snapshot_status_reset();
     redpic1_thermal_reset_bottom_bar_cache();
 
     redpic1_thermal_cancel_pending_present_and_clear_submit();
@@ -1102,6 +1236,7 @@ void redpic1_thermal_resume(void)
     s_key2_ignore_until_ms = power_manager_get_tick_ms() + REDPIC1_THERMAL_KEY2_ENTRY_GUARD_MS;
     s_overlayHold = 0U;
     s_display_paused = 0U;
+    redpic1_thermal_snapshot_status_reset();
     redpic1_thermal_reset_bottom_bar_cache();
 
     redpic1_thermal_drop_non_inflight_slots();

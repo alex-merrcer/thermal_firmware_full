@@ -557,9 +557,15 @@ const char *ui_renderer_localize(const char *text)
     if (strcmp(text, "Restore Previous Version") == 0) return "\xE6\x81\xA2\xE5\xA4\x8D\xE4\xB8\x8A\xE4\xB8\x80\xE4\xB8\xAA\xE7\x89\x88\xE6\x9C\xAC";
     if (strcmp(text, "Version Info") == 0) return "\xE7\x89\x88\xE6\x9C\xAC\xE4\xBF\xA1\xE6\x81\xAF";
     if (strcmp(text, "Pause Send Temp") == 0) return "\xE6\x9A\x82\xE5\x81\x9C\xE5\x8F\x91\xE9\x80\x81\xE6\xB8\xA9\xE5\xBA\xA6";
+    if (strcmp(text, "KEY2 Snapshot") == 0) return "KEY2 Snapshot";
     if (strcmp(text, "Debug Mode") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\xE6\xA8\xA1\xE5\xBC\x8F";
     if (strcmp(text, "Debug Tools") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\xE5\xB7\xA5\xE5\x85\xB7";
     if (strcmp(text, "Debug Page") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\xE9\xA1\xB5\xE9\x9D\xA2";
+    if (strcmp(text, "SD Card") == 0) return "SD Card";
+    if (strcmp(text, "Mount / Info") == 0) return "Mount / Info";
+    if (strcmp(text, "Write Test") == 0) return "Write Test";
+    if (strcmp(text, "Read Test") == 0) return "Read Test";
+    if (strcmp(text, "View Latest") == 0) return "View Latest";
     if (strcmp(text, "Perf Baseline") == 0) return "\xE6\x80\xA7\xE8\x83\xBD\xE5\x9F\xBA\xE7\xBA\xBF";
     if (strcmp(text, "Debug Screen") == 0) return "\xE8\xB0\x83\xE8\xAF\x95\xE5\xB1\x8F\xE5\xB9\x95";
     if (strcmp(text, "Remote Keys") == 0) return "\xE9\x81\xA5\xE6\x8E\xA7\xE6\x8C\x89\xE9\x94\xAE";

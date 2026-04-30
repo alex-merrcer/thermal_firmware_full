@@ -15,13 +15,15 @@
 #define DEVICE_SETTINGS_FLAG_STANDBY_ENABLED           (1UL << 6)
 #define DEVICE_SETTINGS_FLAG_THERMAL_PAUSE_SEND_ESP    (1UL << 7)
 #define DEVICE_SETTINGS_FLAG_MQTT_ENABLED              (1UL << 8)
+#define DEVICE_SETTINGS_FLAG_KEY2_SNAPSHOT_ENABLED     (1UL << 9)
 
 #define DEVICE_SETTINGS_BLOB_MAGIC                     0x44535447UL
 #define DEVICE_SETTINGS_BLOB_VERSION_V1                1U
 #define DEVICE_SETTINGS_BLOB_VERSION_V2                2U
 #define DEVICE_SETTINGS_BLOB_VERSION_V3                3U
 #define DEVICE_SETTINGS_BLOB_VERSION_V4                4U
-#define DEVICE_SETTINGS_BLOB_VERSION                   5U
+#define DEVICE_SETTINGS_BLOB_VERSION_V5                5U
+#define DEVICE_SETTINGS_BLOB_VERSION                   6U
 #define DEVICE_SETTINGS_DEFAULT_SCREEN_OFF_TIMEOUT_MS  180000UL
 #define DEVICE_SETTINGS_DEFAULT_POWER_POLICY           POWER_POLICY_BALANCED
 #define DEVICE_SETTINGS_DEFAULT_RTC_STOP_WAKE_MS       5000UL
@@ -39,6 +41,7 @@ typedef struct
     uint8_t low_power_enabled;
     uint8_t standby_enabled;
     uint8_t thermal_pause_send_esp_enabled;
+    uint8_t key2_snapshot_enabled;
     power_policy_t power_policy;
     uint32_t screen_off_timeout_ms;
     uint32_t rtc_stop_wake_ms;
