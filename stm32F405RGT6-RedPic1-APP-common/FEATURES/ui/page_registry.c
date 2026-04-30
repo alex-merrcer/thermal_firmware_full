@@ -163,6 +163,12 @@ static void storage_page_on_key(uint8_t key_value);
 static void storage_page_on_tick(void);
 static void storage_page_render(uint8_t full_refresh);
 
+static void snapshot_list_on_enter(ui_page_id_t previous_page);
+static void snapshot_list_on_leave(ui_page_id_t next_page);
+static void snapshot_list_on_key(uint8_t key_value);
+static void snapshot_list_on_tick(void);
+static void snapshot_list_render(uint8_t full_refresh);
+
 static void snapshot_review_on_enter(ui_page_id_t previous_page);
 static void snapshot_review_on_leave(ui_page_id_t next_page);
 static void snapshot_review_on_key(uint8_t key_value);
@@ -244,6 +250,7 @@ static const ui_page_ops_t s_page_ops[UI_PAGE_COUNT] =
     { power_page_on_enter, power_page_on_leave, power_page_on_key, power_page_on_tick, power_page_render },
     { system_on_enter, system_on_leave, system_on_key, system_on_tick, system_render },
     { storage_page_on_enter, storage_page_on_leave, storage_page_on_key, storage_page_on_tick, storage_page_render },
+    { snapshot_list_on_enter, snapshot_list_on_leave, snapshot_list_on_key, snapshot_list_on_tick, snapshot_list_render },
     { snapshot_review_on_enter, snapshot_review_on_leave, snapshot_review_on_key, snapshot_review_on_tick, snapshot_review_render },
     { engineering_on_enter, engineering_on_leave, engineering_on_key, engineering_on_tick, engineering_render },
     { perf_baseline_on_enter, perf_baseline_on_leave, perf_baseline_on_key, perf_baseline_on_tick, perf_baseline_render }
@@ -276,13 +283,15 @@ static char s_ota_notice_line2[64];
 static char s_ota_info_current_version[BOOT_INFO_VERSION_LEN];
 static char s_ota_info_latest_version[BOOT_INFO_VERSION_LEN];
 static char s_ota_info_partition[12];
-static char s_storage_notice_line1[32];
-static char s_storage_notice_line2[32];
 static redpic1_thermal_snapshot_t s_snapshot_review_snapshot;
 static uint8_t s_snapshot_review_gray_frame[REDPIC1_THERMAL_SNAPSHOT_PIXEL_COUNT];
 static uint32_t s_snapshot_review_index = 0U;
+static uint32_t s_snapshot_review_target_index = 0U;
 static storage_status_t s_snapshot_review_status = STORAGE_STATUS_NO_SNAPSHOT;
 static uint8_t s_snapshot_review_loaded = 0U;
+static uint8_t s_snapshot_list_selected = 0U;
+static uint8_t s_snapshot_list_window_start = 0U;
+static uint32_t s_snapshot_list_count = 0U;
   static uint8_t s_ota_show_version_rows = 0U;
 static uint8_t s_ota_show_partition_rows = 0U;
 static page_async_state_t s_async_state;
@@ -312,7 +321,6 @@ static const char * const s_system_items[] =
 #if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
     "Pause Send Temp",
 #endif
-    "KEY2 Snapshot",
     "SD Card",
     "Debug Mode",
     "Debug Page"
@@ -320,10 +328,10 @@ static const char * const s_system_items[] =
 
 static const char * const s_storage_items[] =
 {
-    "Mount / Info",
-    "Write Test",
-    "Read Test",
-    "View Latest"
+    "Check SD Card",
+    "View Latest",
+    "KEY2 Snapshot",
+    "Clear Shots"
 };
 
 /* 宸ョ▼椤甸潰鑿滃崟鏂囨湰銆?*/
@@ -359,21 +367,23 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define POWER_ITEM_COUNT           3U
 #if (REDPIC1_THERMAL_PAUSE_SEND_ESP_FEATURE_ENABLE != 0U)
     #define SYSTEM_ITEM_THERMAL_PAUSE_SEND 0U
-    #define SYSTEM_ITEM_KEY2_SNAPSHOT      1U
-    #define SYSTEM_ITEM_SD_CARD            2U
-    #define SYSTEM_ITEM_DEBUG_MODE         3U
-    #define SYSTEM_ITEM_DEBUG_PAGE         4U
-    #define SYSTEM_ITEM_BASE_COUNT         4U
-    #define SYSTEM_ITEM_MAX_COUNT          5U
-#else
-    #define SYSTEM_ITEM_THERMAL_PAUSE_SEND 0xFFU
-    #define SYSTEM_ITEM_KEY2_SNAPSHOT      0U
     #define SYSTEM_ITEM_SD_CARD            1U
     #define SYSTEM_ITEM_DEBUG_MODE         2U
     #define SYSTEM_ITEM_DEBUG_PAGE         3U
     #define SYSTEM_ITEM_BASE_COUNT         3U
     #define SYSTEM_ITEM_MAX_COUNT          4U
+#else
+    #define SYSTEM_ITEM_THERMAL_PAUSE_SEND 0xFFU
+    #define SYSTEM_ITEM_SD_CARD            0U
+    #define SYSTEM_ITEM_DEBUG_MODE         1U
+    #define SYSTEM_ITEM_DEBUG_PAGE         2U
+    #define SYSTEM_ITEM_BASE_COUNT         2U
+    #define SYSTEM_ITEM_MAX_COUNT          3U
 #endif
+#define STORAGE_ITEM_CHECK         0U
+#define STORAGE_ITEM_VIEW_LATEST   1U
+#define STORAGE_ITEM_KEY2_SNAPSHOT 2U
+#define STORAGE_ITEM_CLEAR_SHOTS   3U
 #define STORAGE_ITEM_COUNT         4U
 #define ENGINEERING_ITEM_COUNT     3U
 
@@ -393,7 +403,10 @@ static const uint32_t s_power_screen_off_options_ms[] =
 #define PAGE_INFO_ROW3_Y           120U
 #define PAGE_INFO_ROW4_Y           144U
 #define WIFI_LIST_START_Y          152U
+#define STORAGE_LIST_START_Y       120U
 #define WIFI_ITEM_COUNT            3U
+#define SNAPSHOT_LIST_START_Y      104U
+#define SNAPSHOT_LIST_VISIBLE_COUNT 5U
 #define OTA_LIST_START_Y           104U
 #define POWER_LIST_START_Y         104U
 #define SYSTEM_LIST_START_Y        88U
@@ -482,13 +495,13 @@ static void page_format_ble_status(char *buffer, uint16_t buffer_len)
         snprintf(buffer,
                  buffer_len,
                  "%s",
-                 (s_async_state.ble_target_enabled != 0U) ? "CONNECTING" : "OFF");
+                 (s_async_state.ble_target_enabled != 0U) ? "CONNECTING" : "NOT CONNECTED");
         return;
     }
 
     if (settings.ble_enabled == 0U)
     {
-        snprintf(buffer, buffer_len, "%s", "OFF");
+        snprintf(buffer, buffer_len, "%s", "NOT CONNECTED");
         return;
     }
 
@@ -501,7 +514,7 @@ static void page_format_ble_status(char *buffer, uint16_t buffer_len)
     snprintf(buffer,
              buffer_len,
              "%s",
-             (status.ble_connected != 0U) ? "CONNECTED" : "NOT CONNECTED");
+             (status.ble_connected != 0U) ? "CONNECTED" : "CONNECTING");
 }
 
 static void page_format_cloud_status(char *buffer, uint16_t buffer_len)
@@ -517,13 +530,13 @@ static void page_format_cloud_status(char *buffer, uint16_t buffer_len)
         snprintf(buffer,
                  buffer_len,
                  "%s",
-                 (s_async_state.mqtt_target_enabled != 0U) ? "CONNECTING" : "OFF");
+                 (s_async_state.mqtt_target_enabled != 0U) ? "CONNECTING" : "NOT CONNECTED");
         return;
     }
 
     if (settings.mqtt_enabled == 0U)
     {
-        snprintf(buffer, buffer_len, "%s", "OFF");
+        snprintf(buffer, buffer_len, "%s", "NOT CONNECTED");
         return;
     }
 
@@ -2068,7 +2081,7 @@ static void system_draw_item(uint8_t index)
     else if (index == SYSTEM_ITEM_DEBUG_MODE)
     {
         ui_renderer_draw_toggle_item(item_y,
-                                     s_system_items[3],
+                                     s_system_items[2],
                                      settings.debug_mode_enabled,
                                      (s_system_selected == SYSTEM_ITEM_DEBUG_MODE) ? 1U : 0U,
                                      WHITE);
@@ -2081,20 +2094,12 @@ static void system_draw_item(uint8_t index)
                                    1U,
                                    WHITE);
     }
-    else if (index == SYSTEM_ITEM_KEY2_SNAPSHOT)
-    {
-        ui_renderer_draw_toggle_item(item_y,
-                                     s_system_items[1],
-                                     settings.key2_snapshot_enabled,
-                                     (s_system_selected == SYSTEM_ITEM_KEY2_SNAPSHOT) ? 1U : 0U,
-                                     WHITE);
-    }
     else if (index == SYSTEM_ITEM_DEBUG_PAGE)
     {
         if (settings.debug_mode_enabled != 0U)
         {
             ui_renderer_draw_list_item(item_y,
-                                       s_system_items[4],
+                                       s_system_items[3],
                                        (s_system_selected == SYSTEM_ITEM_DEBUG_PAGE) ? 1U : 0U,
                                        1U,
                                        WHITE);
@@ -2108,7 +2113,7 @@ static void system_draw_item(uint8_t index)
     if (index == SYSTEM_ITEM_DEBUG_MODE)
     {
         ui_renderer_draw_toggle_item(item_y,
-                                     s_system_items[2],
+                                     s_system_items[1],
                                      settings.debug_mode_enabled,
                                      (s_system_selected == SYSTEM_ITEM_DEBUG_MODE) ? 1U : 0U,
                                      WHITE);
@@ -2121,20 +2126,12 @@ static void system_draw_item(uint8_t index)
                                    1U,
                                    WHITE);
     }
-    else if (index == SYSTEM_ITEM_KEY2_SNAPSHOT)
-    {
-        ui_renderer_draw_toggle_item(item_y,
-                                     s_system_items[0],
-                                     settings.key2_snapshot_enabled,
-                                     (s_system_selected == SYSTEM_ITEM_KEY2_SNAPSHOT) ? 1U : 0U,
-                                     WHITE);
-    }
     else if (index == SYSTEM_ITEM_DEBUG_PAGE)
     {
         if (settings.debug_mode_enabled != 0U)
         {
             ui_renderer_draw_list_item(item_y,
-                                       s_system_items[3],
+                                       s_system_items[2],
                                        (s_system_selected == SYSTEM_ITEM_DEBUG_PAGE) ? 1U : 0U,
                                        1U,
                                        WHITE);
@@ -2158,18 +2155,6 @@ static void system_draw_items(void)
     }
 }
 
-static void storage_page_set_notice(const char *line1, const char *line2)
-{
-    snprintf(s_storage_notice_line1,
-             sizeof(s_storage_notice_line1),
-             "%s",
-             (line1 != 0) ? line1 : "");
-    snprintf(s_storage_notice_line2,
-             sizeof(s_storage_notice_line2),
-             "%s",
-             (line2 != 0) ? line2 : "");
-}
-
 static void storage_page_refresh_state(storage_info_t *info)
 {
     storage_info_t local_info;
@@ -2191,10 +2176,7 @@ static void storage_draw_info_rows(void)
     storage_page_refresh_state(&info);
 
     snprintf(value, sizeof(value), "%s", info.card_present != 0U ? "READY" : "NOT READY");
-    ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Card", value, PAGE_UI_CYAN_COLOR, WHITE);
-
-    snprintf(value, sizeof(value), "%s", info.mounted != 0U ? "MOUNTED" : "NOT MOUNTED");
-    ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Mount", value, PAGE_UI_CYAN_COLOR, WHITE);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "SD Card Status", value, PAGE_UI_CYAN_COLOR, WHITE);
 
     if (info.total_kb != 0U)
     {
@@ -2204,22 +2186,28 @@ static void storage_draw_info_rows(void)
     {
         snprintf(value, sizeof(value), "--");
     }
-    ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y, "Capacity", value, PAGE_UI_CYAN_COLOR, WHITE);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Capacity", value, PAGE_UI_CYAN_COLOR, WHITE);
 
-    if (info.free_kb != 0U)
-    {
-        snprintf(value, sizeof(value), "%lu MB", (unsigned long)(info.free_kb / 1024UL));
-    }
-    else
-    {
-        snprintf(value, sizeof(value), "--");
-    }
-    ui_renderer_draw_value_row(PAGE_INFO_ROW4_Y, "Free", value, PAGE_UI_CYAN_COLOR, WHITE);
+    ui_renderer_clear_row(PAGE_INFO_ROW3_Y, PAGE_UI_BG_COLOR);
+    ui_renderer_clear_row(PAGE_INFO_ROW4_Y, PAGE_UI_BG_COLOR);
 }
 
 static void storage_draw_item(uint8_t index)
 {
-    uint16_t item_y = page_list_item_y(WIFI_LIST_START_Y, index);
+    device_settings_t settings;
+    uint16_t item_y = page_list_item_y(STORAGE_LIST_START_Y, index);
+
+    app_rtos_settings_copy(&settings);
+
+    if (index == STORAGE_ITEM_KEY2_SNAPSHOT)
+    {
+        ui_renderer_draw_toggle_item(item_y,
+                                     s_storage_items[index],
+                                     settings.key2_snapshot_enabled,
+                                     (s_storage_selected == index) ? 1U : 0U,
+                                     WHITE);
+        return;
+    }
 
     ui_renderer_draw_list_item(item_y,
                                s_storage_items[index],
@@ -2236,6 +2224,131 @@ static void storage_draw_items(void)
     {
         storage_draw_item(index);
     }
+}
+
+static void snapshot_list_draw_item(uint8_t visible_index)
+{
+    uint8_t absolute_index = (uint8_t)(s_snapshot_list_window_start + visible_index);
+    uint16_t item_y = page_list_item_y(SNAPSHOT_LIST_START_Y, visible_index);
+    char label[24];
+
+    if ((uint32_t)absolute_index >= s_snapshot_list_count)
+    {
+        ui_renderer_clear_row(item_y, PAGE_UI_BG_COLOR);
+        return;
+    }
+
+    snprintf(label,
+             sizeof(label),
+             "\xE6\x88\xAA\xE5\x9B\xBE %02u",
+             (unsigned int)(absolute_index + 1U));
+    ui_renderer_draw_list_item(item_y,
+                               label,
+                               (s_snapshot_list_selected == absolute_index) ? 1U : 0U,
+                               1U,
+                               WHITE);
+}
+
+static void snapshot_list_draw_items(void)
+{
+    uint8_t visible_index = 0U;
+
+    for (visible_index = 0U; visible_index < SNAPSHOT_LIST_VISIBLE_COUNT; ++visible_index)
+    {
+        snapshot_list_draw_item(visible_index);
+    }
+}
+
+static void snapshot_list_align_window(void)
+{
+    if (s_snapshot_list_count == 0U)
+    {
+        s_snapshot_list_selected = 0U;
+        s_snapshot_list_window_start = 0U;
+        return;
+    }
+
+    if ((uint32_t)s_snapshot_list_selected >= s_snapshot_list_count)
+    {
+        s_snapshot_list_selected = (uint8_t)(s_snapshot_list_count - 1U);
+    }
+
+    if (s_snapshot_list_selected < s_snapshot_list_window_start)
+    {
+        s_snapshot_list_window_start = s_snapshot_list_selected;
+    }
+    else if ((uint32_t)s_snapshot_list_selected >= ((uint32_t)s_snapshot_list_window_start + SNAPSHOT_LIST_VISIBLE_COUNT))
+    {
+        s_snapshot_list_window_start = (uint8_t)(s_snapshot_list_selected - (SNAPSHOT_LIST_VISIBLE_COUNT - 1U));
+    }
+}
+
+static uint16_t snapshot_review_bottom_bar_top(void)
+{
+    return (uint16_t)(LCD_H - 20U);
+}
+
+static void snapshot_review_draw_bottom_bar_value(uint16_t value_x,
+                                                  uint16_t value_width,
+                                                  const char *value_text)
+{
+    uint16_t bar_top = snapshot_review_bottom_bar_top();
+    uint16_t value_right = (uint16_t)(value_x + value_width - 1U);
+
+    if (value_text == 0 || value_width == 0U)
+    {
+        return;
+    }
+
+    LCD_Fill(value_x, bar_top, value_right, (uint16_t)(LCD_H - 1U), PAGE_UI_PANEL_COLOR);
+    LCD_ShowUTF8String(value_x,
+                       (uint16_t)(bar_top + 2U),
+                       value_text,
+                       WHITE,
+                       PAGE_UI_PANEL_COLOR,
+                       16,
+                       0);
+}
+
+static void snapshot_review_draw_bottom_bar(void)
+{
+    uint16_t bar_top = snapshot_review_bottom_bar_top();
+    char value_text[16];
+
+    LCD_Fill(0U, bar_top, (uint16_t)(LCD_W - 1U), (uint16_t)(LCD_H - 1U), PAGE_UI_PANEL_COLOR);
+    LCD_DrawLine(0U, bar_top, (uint16_t)(LCD_W - 1U), bar_top, PAGE_UI_PANEL_EDGE_COLOR);
+    LCD_DrawLine(86U, bar_top, 86U, (uint16_t)(LCD_H - 1U), PAGE_UI_PANEL_EDGE_COLOR);
+    LCD_DrawLine(164U, bar_top, 164U, (uint16_t)(LCD_H - 1U), PAGE_UI_PANEL_EDGE_COLOR);
+    LCD_DrawLine(242U, bar_top, 242U, (uint16_t)(LCD_H - 1U), PAGE_UI_PANEL_EDGE_COLOR);
+
+    LCD_ShowUTF8String(4U, (uint16_t)(bar_top + 2U), "\xE6\x88\xAA\xE5\x9B\xBE", PAGE_UI_CYAN_COLOR, PAGE_UI_PANEL_COLOR, 16, 0);
+    LCD_ShowUTF8String(92U, (uint16_t)(bar_top + 2U), "\xE6\x9C\x80\xE4\xBD\x8E", PAGE_UI_CYAN_COLOR, PAGE_UI_PANEL_COLOR, 16, 0);
+    LCD_ShowUTF8String(170U, (uint16_t)(bar_top + 2U), "\xE6\x9C\x80\xE9\xAB\x98", PAGE_UI_ACCENT_EDGE_COLOR, PAGE_UI_PANEL_COLOR, 16, 0);
+    LCD_ShowUTF8String(248U, (uint16_t)(bar_top + 2U), "\xE4\xB8\xAD\xE5\xBF\x83", WHITE, PAGE_UI_PANEL_COLOR, 16, 0);
+
+    snprintf(value_text, sizeof(value_text), "%02lu", (unsigned long)s_snapshot_review_index);
+    snapshot_review_draw_bottom_bar_value(36U, 46U, value_text);
+
+    snprintf(value_text,
+             sizeof(value_text),
+             "%d.%dC",
+             s_snapshot_review_snapshot.min_x10 / 10,
+             (s_snapshot_review_snapshot.min_x10 < 0) ? -(s_snapshot_review_snapshot.min_x10 % 10) : (s_snapshot_review_snapshot.min_x10 % 10));
+    snapshot_review_draw_bottom_bar_value(124U, 36U, value_text);
+
+    snprintf(value_text,
+             sizeof(value_text),
+             "%d.%dC",
+             s_snapshot_review_snapshot.max_x10 / 10,
+             (s_snapshot_review_snapshot.max_x10 < 0) ? -(s_snapshot_review_snapshot.max_x10 % 10) : (s_snapshot_review_snapshot.max_x10 % 10));
+    snapshot_review_draw_bottom_bar_value(202U, 36U, value_text);
+
+    snprintf(value_text,
+             sizeof(value_text),
+             "%d.%dC",
+             s_snapshot_review_snapshot.center_x10 / 10,
+             (s_snapshot_review_snapshot.center_x10 < 0) ? -(s_snapshot_review_snapshot.center_x10 % 10) : (s_snapshot_review_snapshot.center_x10 % 10));
+    snapshot_review_draw_bottom_bar_value(280U, 36U, value_text);
 }
 
 static void snapshot_review_draw_info(void)
@@ -2907,14 +3020,6 @@ static void system_on_key(uint8_t key_value)
             }
 #endif
         }
-        else if (s_system_selected == SYSTEM_ITEM_KEY2_SNAPSHOT)
-        {
-            updated.key2_snapshot_enabled = (uint8_t)!updated.key2_snapshot_enabled;
-            if (page_store_settings(&updated) != 0U)
-            {
-                system_draw_item(SYSTEM_ITEM_KEY2_SNAPSHOT);
-            }
-        }
         else if (s_system_selected == SYSTEM_ITEM_SD_CARD)
         {
             ui_manager_navigate_to(UI_PAGE_STORAGE);
@@ -2980,8 +3085,6 @@ static void storage_page_on_enter(ui_page_id_t previous_page)
     {
         s_storage_selected = 0U;
     }
-
-    storage_page_set_notice("Select Mount/Info first", "Long KEY2 Home");
 }
 
 static void storage_page_on_leave(ui_page_id_t next_page)
@@ -2991,9 +3094,12 @@ static void storage_page_on_leave(ui_page_id_t next_page)
 
 static void storage_page_on_key(uint8_t key_value)
 {
+    device_settings_t updated;
+    uint8_t refresh_ui = 0U;
     storage_status_t status = STORAGE_STATUS_OK;
     storage_info_t info;
-    char detail[24];
+
+    app_rtos_settings_copy(&updated);
 
     if (key_value == KEY1_PRES)
     {
@@ -3009,7 +3115,7 @@ static void storage_page_on_key(uint8_t key_value)
     }
     else if (key_value == KEY2_PRES)
     {
-        if (s_storage_selected == 0U)
+        if (s_storage_selected == STORAGE_ITEM_CHECK)
         {
             memset(&info, 0, sizeof(info));
             status = (storage_service_mount() != 0U) ? STORAGE_STATUS_OK : storage_service_get_info(0);
@@ -3017,38 +3123,31 @@ static void storage_page_on_key(uint8_t key_value)
             {
                 status = storage_service_query_capacity(&info);
             }
-
-            if (status == STORAGE_STATUS_OK)
-            {
-                snprintf(detail, sizeof(detail), "%luMB / %luMB",
-                         (unsigned long)(info.free_kb / 1024UL),
-                         (unsigned long)(info.total_kb / 1024UL));
-                storage_page_set_notice("Mount OK", detail);
-            }
-            else
-            {
-                storage_page_set_notice("Mount failed", storage_service_status_text(status));
-            }
+            refresh_ui = 1U;
         }
-        else if (s_storage_selected == 1U)
+        else if (s_storage_selected == STORAGE_ITEM_VIEW_LATEST)
         {
-            status = storage_service_write_test_file();
-            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Write OK" : "Write failed",
-                                    storage_service_status_text(status));
-        }
-        else if (s_storage_selected == 2U)
-        {
-            status = storage_service_read_test_file();
-            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Read OK" : "Read failed",
-                                    storage_service_status_text(status));
-        }
-        else if (s_storage_selected == 3U)
-        {
-            ui_manager_navigate_to(UI_PAGE_SNAPSHOT_REVIEW);
+            ui_manager_navigate_to(UI_PAGE_SNAPSHOT_LIST);
             return;
         }
+        else if (s_storage_selected == STORAGE_ITEM_KEY2_SNAPSHOT)
+        {
+            updated.key2_snapshot_enabled = (uint8_t)!updated.key2_snapshot_enabled;
+            if (page_store_settings(&updated) != 0U)
+            {
+                storage_draw_item(STORAGE_ITEM_KEY2_SNAPSHOT);
+            }
+        }
+        else if (s_storage_selected == STORAGE_ITEM_CLEAR_SHOTS)
+        {
+            status = snapshot_storage_clear_all();
+            refresh_ui = 1U;
+        }
 
-        ui_manager_force_full_refresh();
+        if (refresh_ui != 0U)
+        {
+            ui_manager_force_full_refresh();
+        }
     }
 }
 
@@ -3064,10 +3163,115 @@ static void storage_page_render(uint8_t full_refresh)
         return;
     }
 
-    ui_renderer_draw_product_page("SD Card", "Mount / Test / Snapshot", PAGE_UI_ACCENT_COLOR);
+    ui_renderer_draw_product_page("SD Card", "Check SD Card / View Latest", PAGE_UI_ACCENT_COLOR);
     storage_draw_info_rows();
     storage_draw_items();
-    ui_renderer_draw_footer(s_storage_notice_line1, s_storage_notice_line2);
+}
+
+static void snapshot_list_on_enter(ui_page_id_t previous_page)
+{
+    (void)previous_page;
+    s_snapshot_list_count = 0U;
+    s_snapshot_list_selected = 0U;
+    s_snapshot_list_window_start = 0U;
+    (void)snapshot_storage_get_count(&s_snapshot_list_count);
+    snapshot_list_align_window();
+}
+
+static void snapshot_list_on_leave(ui_page_id_t next_page)
+{
+    (void)next_page;
+}
+
+static void snapshot_list_on_key(uint8_t key_value)
+{
+    uint8_t previous_window_start = s_snapshot_list_window_start;
+    uint8_t previous_selected = s_snapshot_list_selected;
+
+    if (key_value == UI_KEY_KEY2_LONG)
+    {
+        ui_manager_navigate_home();
+        return;
+    }
+
+    if (s_snapshot_list_count == 0U)
+    {
+        if (key_value == KEY1_PRES || key_value == KEY2_PRES || key_value == KEY3_PRES)
+        {
+            ui_manager_navigate_back();
+        }
+        return;
+    }
+
+    if (key_value == KEY1_PRES)
+    {
+        if (s_snapshot_list_selected == 0U)
+        {
+            s_snapshot_list_selected = (uint8_t)(s_snapshot_list_count - 1U);
+        }
+        else
+        {
+            --s_snapshot_list_selected;
+        }
+        snapshot_list_align_window();
+        if (s_snapshot_list_window_start != previous_window_start)
+        {
+            snapshot_list_draw_items();
+        }
+        else
+        {
+            snapshot_list_draw_item((uint8_t)(previous_selected - s_snapshot_list_window_start));
+            snapshot_list_draw_item((uint8_t)(s_snapshot_list_selected - s_snapshot_list_window_start));
+        }
+    }
+    else if (key_value == KEY3_PRES)
+    {
+        s_snapshot_list_selected = (uint8_t)((s_snapshot_list_selected + 1U) % s_snapshot_list_count);
+        snapshot_list_align_window();
+        if (s_snapshot_list_window_start != previous_window_start)
+        {
+            snapshot_list_draw_items();
+        }
+        else
+        {
+            snapshot_list_draw_item((uint8_t)(previous_selected - s_snapshot_list_window_start));
+            snapshot_list_draw_item((uint8_t)(s_snapshot_list_selected - s_snapshot_list_window_start));
+        }
+    }
+    else if (key_value == KEY2_PRES)
+    {
+        s_snapshot_review_target_index = (uint32_t)s_snapshot_list_selected + 1U;
+        ui_manager_navigate_to(UI_PAGE_SNAPSHOT_REVIEW);
+    }
+}
+
+static void snapshot_list_on_tick(void)
+{
+    page_async_handle_timeouts();
+}
+
+static void snapshot_list_render(uint8_t full_refresh)
+{
+    char value[16];
+
+    if (full_refresh == 0U)
+    {
+        return;
+    }
+
+    ui_renderer_draw_product_page("SD Card", "Shot List", PAGE_UI_ACCENT_COLOR);
+    snprintf(value, sizeof(value), "%02lu", (unsigned long)s_snapshot_list_count);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Shot Count", value, PAGE_UI_CYAN_COLOR, WHITE);
+
+    if (s_snapshot_list_count == 0U)
+    {
+        ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Info", "No snapshot", PAGE_UI_CYAN_COLOR, WHITE);
+        ui_renderer_clear_row(PAGE_INFO_ROW3_Y, PAGE_UI_BG_COLOR);
+        ui_renderer_clear_row(PAGE_INFO_ROW4_Y, PAGE_UI_BG_COLOR);
+        return;
+    }
+
+    snapshot_list_draw_items();
 }
 
 static void snapshot_review_on_enter(ui_page_id_t previous_page)
@@ -3078,13 +3282,22 @@ static void snapshot_review_on_enter(ui_page_id_t previous_page)
     memset(s_snapshot_review_gray_frame, 0, sizeof(s_snapshot_review_gray_frame));
     s_snapshot_review_index = 0U;
     s_snapshot_review_loaded = 0U;
-    s_snapshot_review_status = snapshot_storage_load_latest(&s_snapshot_review_snapshot,
-                                                            &s_snapshot_review_index);
+    if (s_snapshot_review_target_index != 0U)
+    {
+        s_snapshot_review_index = s_snapshot_review_target_index;
+        s_snapshot_review_status = snapshot_storage_load_index(s_snapshot_review_target_index,
+                                                               &s_snapshot_review_snapshot);
+    }
+    else
+    {
+        s_snapshot_review_status = snapshot_storage_load_latest(&s_snapshot_review_snapshot,
+                                                                &s_snapshot_review_index);
+    }
 
     if (s_snapshot_review_status == STORAGE_STATUS_OK)
     {
-        s_snapshot_review_status = snapshot_storage_build_gray_preview(&s_snapshot_review_snapshot,
-                                                                      s_snapshot_review_gray_frame);
+        s_snapshot_review_status = snapshot_storage_build_view_latest_gray_preview(&s_snapshot_review_snapshot,
+                                                                                   s_snapshot_review_gray_frame);
         s_snapshot_review_loaded = (s_snapshot_review_status == STORAGE_STATUS_OK) ? 1U : 0U;
     }
 }
@@ -3092,6 +3305,7 @@ static void snapshot_review_on_enter(ui_page_id_t previous_page)
 static void snapshot_review_on_leave(ui_page_id_t next_page)
 {
     (void)next_page;
+    s_snapshot_review_target_index = 0U;
 }
 
 static void snapshot_review_on_key(uint8_t key_value)
@@ -3113,42 +3327,16 @@ static void snapshot_review_on_tick(void)
 
 static void snapshot_review_render(uint8_t full_refresh)
 {
-    char info_line[48];
-
     if (full_refresh == 0U)
     {
         return;
     }
 
-    memset(info_line, 0, sizeof(info_line));
-
     if (s_snapshot_review_loaded != 0U)
     {
         power_manager_acquire_lock(POWER_LOCK_DISPLAY_DMA);
         (void)LCD_Disp_Thermal_Interpolated_DMA(s_snapshot_review_gray_frame);
-        LCD_Fill(0U, (uint16_t)(LCD_H - 20U), (uint16_t)(LCD_W - 1U), (uint16_t)(LCD_H - 1U), PAGE_UI_PANEL_COLOR);
-        LCD_DrawLine(0U,
-                     (uint16_t)(LCD_H - 20U),
-                     (uint16_t)(LCD_W - 1U),
-                     (uint16_t)(LCD_H - 20U),
-                     PAGE_UI_PANEL_EDGE_COLOR);
-        snprintf(info_line,
-                 sizeof(info_line),
-                 "#%06lu L%d.%d H%d.%d C%d.%d",
-                 (unsigned long)s_snapshot_review_index,
-                 s_snapshot_review_snapshot.min_x10 / 10,
-                 (s_snapshot_review_snapshot.min_x10 < 0) ? -(s_snapshot_review_snapshot.min_x10 % 10) : (s_snapshot_review_snapshot.min_x10 % 10),
-                 s_snapshot_review_snapshot.max_x10 / 10,
-                 (s_snapshot_review_snapshot.max_x10 < 0) ? -(s_snapshot_review_snapshot.max_x10 % 10) : (s_snapshot_review_snapshot.max_x10 % 10),
-                 s_snapshot_review_snapshot.center_x10 / 10,
-                 (s_snapshot_review_snapshot.center_x10 < 0) ? -(s_snapshot_review_snapshot.center_x10 % 10) : (s_snapshot_review_snapshot.center_x10 % 10));
-        LCD_ShowString(4U,
-                       (uint16_t)(LCD_H - 16U),
-                       (const u8 *)info_line,
-                       WHITE,
-                       PAGE_UI_PANEL_COLOR,
-                       12,
-                       0);
+        snapshot_review_draw_bottom_bar();
         power_manager_release_lock(POWER_LOCK_DISPLAY_DMA);
         return;
     }
@@ -4504,8 +4692,10 @@ ui_page_id_t page_registry_get_parent(ui_page_id_t page_id)
         return UI_PAGE_SYSTEM;
     case UI_PAGE_STORAGE:
         return UI_PAGE_SYSTEM;
-    case UI_PAGE_SNAPSHOT_REVIEW:
+    case UI_PAGE_SNAPSHOT_LIST:
         return UI_PAGE_STORAGE;
+    case UI_PAGE_SNAPSHOT_REVIEW:
+        return UI_PAGE_SNAPSHOT_LIST;
     case UI_PAGE_ENGINEERING:
         return UI_PAGE_SYSTEM;
     case UI_PAGE_HOME:

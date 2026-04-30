@@ -6,6 +6,7 @@
 #include "lcd_dma.h"
 #include "ff.h"
 #include "redpic1_thermal.h"
+#include "thermal_visual.h"
 #include "thermal_snapshot_file.h"
 
 #define SNAPSHOT_STORAGE_INDEX_FILE      "0:/REDPIC/INDEX.TXT"
@@ -22,6 +23,7 @@
 #define SNAPSHOT_STORAGE_MIN_SPAN_C                1.5f
 
 static float s_snapshot_sort_buffer[SNAPSHOT_STORAGE_PIXEL_COUNT];
+static float s_snapshot_temp_buffer[SNAPSHOT_STORAGE_PIXEL_COUNT];
 static uint8_t s_snapshot_gray_buffer[SNAPSHOT_STORAGE_PIXEL_COUNT];
 
 static uint32_t snapshot_storage_parse_u32(const char *text)
@@ -296,6 +298,31 @@ storage_status_t snapshot_storage_build_gray_preview(const redpic1_thermal_snaps
     return STORAGE_STATUS_OK;
 }
 
+storage_status_t snapshot_storage_build_view_latest_gray_preview(const redpic1_thermal_snapshot_t *snapshot,
+                                                                 uint8_t *gray_frame)
+{
+    uint16_t index = 0U;
+
+    if (snapshot == 0 || gray_frame == 0)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    for (index = 0U; index < SNAPSHOT_STORAGE_PIXEL_COUNT; ++index)
+    {
+        s_snapshot_temp_buffer[index] = (float)snapshot->pixels_x10[index] / 10.0f;
+    }
+
+    redpic1_thermal_visual_prepare_gray_frame(s_snapshot_temp_buffer,
+                                              s_snapshot_temp_buffer,
+                                              0U,
+                                              gray_frame,
+                                              0,
+                                              0);
+
+    return STORAGE_STATUS_OK;
+}
+
 static storage_status_t snapshot_storage_write_bmp(uint32_t index,
                                                    const redpic1_thermal_snapshot_t *snapshot)
 {
@@ -499,6 +526,62 @@ static storage_status_t snapshot_storage_append_log(uint32_t index,
     return STORAGE_STATUS_OK;
 }
 
+storage_status_t snapshot_storage_get_count(uint32_t *out_count)
+{
+    if (out_count == 0)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    return snapshot_storage_get_latest_index(out_count);
+}
+
+storage_status_t snapshot_storage_load_index(uint32_t index,
+                                             redpic1_thermal_snapshot_t *out_snapshot)
+{
+    FIL file;
+    redpic_snapshot_t file_snapshot;
+    char path[32];
+    UINT bytes_done = 0U;
+    FRESULT fr = FR_OK;
+
+    if (out_snapshot == 0 || index == 0U)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    memset(out_snapshot, 0, sizeof(*out_snapshot));
+    memset(&file, 0, sizeof(file));
+    memset(&file_snapshot, 0, sizeof(file_snapshot));
+    memset(path, 0, sizeof(path));
+
+    if (storage_service_is_mounted() == 0U)
+    {
+        return STORAGE_STATUS_NOT_READY;
+    }
+
+    snprintf(path, sizeof(path), SNAPSHOT_STORAGE_PATH_TEMPLATE, (unsigned long)index);
+    fr = f_open(&file, (const TCHAR *)path, FA_READ);
+    if (fr != FR_OK)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    fr = f_read(&file, &file_snapshot, sizeof(file_snapshot), &bytes_done);
+    (void)f_close(&file);
+    if (fr != FR_OK || bytes_done != sizeof(file_snapshot))
+    {
+        return STORAGE_STATUS_IO_ERROR;
+    }
+
+    if (thermal_snapshot_file_parse(out_snapshot, &file_snapshot) == 0U)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    return STORAGE_STATUS_OK;
+}
+
 storage_status_t snapshot_storage_save_latest(uint32_t *out_index)
 {
     redpic1_thermal_snapshot_t thermal_snapshot;
@@ -591,4 +674,56 @@ storage_status_t snapshot_storage_get_latest_index(uint32_t *out_index)
     }
 
     return snapshot_storage_read_index(out_index);
+}
+
+storage_status_t snapshot_storage_clear_all(void)
+{
+    uint32_t latest_index = 0U;
+    uint32_t index = 0U;
+    char path[32];
+    FRESULT fr = FR_OK;
+    storage_status_t status = STORAGE_STATUS_OK;
+
+    if (storage_service_is_mounted() == 0U)
+    {
+        return STORAGE_STATUS_NOT_READY;
+    }
+
+    status = snapshot_storage_read_index(&latest_index);
+    if (status != STORAGE_STATUS_OK)
+    {
+        return status;
+    }
+
+    memset(path, 0, sizeof(path));
+    for (index = 1U; index <= latest_index; ++index)
+    {
+        snprintf(path, sizeof(path), SNAPSHOT_STORAGE_PATH_TEMPLATE, (unsigned long)index);
+        fr = f_unlink((const TCHAR *)path);
+        if (fr != FR_OK && fr != FR_NO_FILE)
+        {
+            return STORAGE_STATUS_FS_ERROR;
+        }
+
+        snprintf(path, sizeof(path), SNAPSHOT_STORAGE_BMP_TEMPLATE, (unsigned long)index);
+        fr = f_unlink((const TCHAR *)path);
+        if (fr != FR_OK && fr != FR_NO_FILE)
+        {
+            return STORAGE_STATUS_FS_ERROR;
+        }
+    }
+
+    fr = f_unlink((const TCHAR *)SNAPSHOT_STORAGE_INDEX_FILE);
+    if (fr != FR_OK && fr != FR_NO_FILE)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    fr = f_unlink((const TCHAR *)SNAPSHOT_STORAGE_LOG_FILE);
+    if (fr != FR_OK && fr != FR_NO_FILE)
+    {
+        return STORAGE_STATUS_FS_ERROR;
+    }
+
+    return STORAGE_STATUS_OK;
 }
