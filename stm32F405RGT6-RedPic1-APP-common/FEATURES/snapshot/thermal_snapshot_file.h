@@ -29,5 +29,7 @@ typedef __packed struct
 uint16_t thermal_snapshot_file_crc16(const uint8_t *data, uint32_t length);
 void thermal_snapshot_file_fill(redpic_snapshot_t *file_snapshot,
                                 const redpic1_thermal_snapshot_t *thermal_snapshot);
+uint8_t thermal_snapshot_file_parse(redpic1_thermal_snapshot_t *thermal_snapshot,
+                                    const redpic_snapshot_t *file_snapshot);
 
 #endif

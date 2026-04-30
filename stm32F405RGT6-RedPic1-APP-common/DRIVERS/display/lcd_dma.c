@@ -227,6 +227,11 @@ static inline uint16_t lcd_dma_gray_to_output_color(uint8_t pixel)
     return (uint16_t)((color >> 8) | (color << 8));
 }
 
+uint16_t lcd_dma_palette_color_rgb565(uint8_t pixel)
+{
+    return GCM_Pseudo3[pixel];
+}
+
 static void lcd_dma_overlay_crosshair_row(uint16_t out_row, uint8_t *buf)
 {
     uint16_t center_x = (uint16_t)(LCD_DMA_THERMAL_AREA_WIDTH / 2U);

@@ -43,7 +43,7 @@
 "..\obj\lcd.o"
 "..\obj\lcd_init.o"
 "..\obj\lcd_dma.o"
-"..\obj\sd_card_port_stub.o"
+"..\obj\sdio_sdcard.o"
 "..\obj\mlx90640.o"
 "..\obj\mlx90640_api.o"
 "..\obj\mlx90640_i2c_driver.o"

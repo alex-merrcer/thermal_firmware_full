@@ -61,3 +61,44 @@ void thermal_snapshot_file_fill(redpic_snapshot_t *file_snapshot,
     file_snapshot->crc16 = thermal_snapshot_file_crc16((const uint8_t *)file_snapshot,
                                                        (uint32_t)sizeof(*file_snapshot));
 }
+
+uint8_t thermal_snapshot_file_parse(redpic1_thermal_snapshot_t *thermal_snapshot,
+                                    const redpic_snapshot_t *file_snapshot)
+{
+    uint16_t index = 0U;
+    redpic_snapshot_t temp;
+
+    if (thermal_snapshot == 0 || file_snapshot == 0)
+    {
+        return 0U;
+    }
+
+    memcpy(&temp, file_snapshot, sizeof(temp));
+    if (temp.magic != REDPIC_RTS_MAGIC ||
+        temp.version != REDPIC_RTS_VERSION ||
+        temp.width != REDPIC_RTS_WIDTH ||
+        temp.height != REDPIC_RTS_HEIGHT)
+    {
+        return 0U;
+    }
+
+    temp.crc16 = 0U;
+    if (thermal_snapshot_file_crc16((const uint8_t *)&temp, (uint32_t)sizeof(temp)) != file_snapshot->crc16)
+    {
+        return 0U;
+    }
+
+    memset(thermal_snapshot, 0, sizeof(*thermal_snapshot));
+    thermal_snapshot->valid = 1U;
+    thermal_snapshot->frame_id = file_snapshot->frame_id;
+    thermal_snapshot->timestamp_ms = file_snapshot->timestamp;
+    thermal_snapshot->min_x10 = file_snapshot->min_x10;
+    thermal_snapshot->max_x10 = file_snapshot->max_x10;
+    thermal_snapshot->center_x10 = file_snapshot->center_x10;
+    for (index = 0U; index < REDPIC_RTS_PIXELS; ++index)
+    {
+        thermal_snapshot->pixels_x10[index] = file_snapshot->pixels_x10[index];
+    }
+
+    return 1U;
+}

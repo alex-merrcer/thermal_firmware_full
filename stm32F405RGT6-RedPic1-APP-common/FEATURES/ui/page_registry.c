@@ -10,6 +10,7 @@
 #include "esp_host_service.h"
 #include "key.h"
 #include "lcd.h"
+#include "lcd_dma.h"
 #include "lcd_init.h"
 #include "lcd_utf8.h"
 #include "ota_ctrl_protocol.h"
@@ -162,6 +163,12 @@ static void storage_page_on_key(uint8_t key_value);
 static void storage_page_on_tick(void);
 static void storage_page_render(uint8_t full_refresh);
 
+static void snapshot_review_on_enter(ui_page_id_t previous_page);
+static void snapshot_review_on_leave(ui_page_id_t next_page);
+static void snapshot_review_on_key(uint8_t key_value);
+static void snapshot_review_on_tick(void);
+static void snapshot_review_render(uint8_t full_refresh);
+
 static void engineering_on_enter(ui_page_id_t previous_page);
 static void engineering_on_leave(ui_page_id_t next_page);
 static void engineering_on_key(uint8_t key_value);
@@ -237,6 +244,7 @@ static const ui_page_ops_t s_page_ops[UI_PAGE_COUNT] =
     { power_page_on_enter, power_page_on_leave, power_page_on_key, power_page_on_tick, power_page_render },
     { system_on_enter, system_on_leave, system_on_key, system_on_tick, system_render },
     { storage_page_on_enter, storage_page_on_leave, storage_page_on_key, storage_page_on_tick, storage_page_render },
+    { snapshot_review_on_enter, snapshot_review_on_leave, snapshot_review_on_key, snapshot_review_on_tick, snapshot_review_render },
     { engineering_on_enter, engineering_on_leave, engineering_on_key, engineering_on_tick, engineering_render },
     { perf_baseline_on_enter, perf_baseline_on_leave, perf_baseline_on_key, perf_baseline_on_tick, perf_baseline_render }
 };
@@ -270,6 +278,11 @@ static char s_ota_info_latest_version[BOOT_INFO_VERSION_LEN];
 static char s_ota_info_partition[12];
 static char s_storage_notice_line1[32];
 static char s_storage_notice_line2[32];
+static redpic1_thermal_snapshot_t s_snapshot_review_snapshot;
+static uint8_t s_snapshot_review_gray_frame[REDPIC1_THERMAL_SNAPSHOT_PIXEL_COUNT];
+static uint32_t s_snapshot_review_index = 0U;
+static storage_status_t s_snapshot_review_status = STORAGE_STATUS_NO_SNAPSHOT;
+static uint8_t s_snapshot_review_loaded = 0U;
   static uint8_t s_ota_show_version_rows = 0U;
 static uint8_t s_ota_show_partition_rows = 0U;
 static page_async_state_t s_async_state;
@@ -308,8 +321,8 @@ static const char * const s_storage_items[] =
 {
     "Mount",
     "Capacity",
-    "Write Test",
-    "Read Test"
+    "Save Snapshot",
+    "View Latest"
 };
 
 /* 宸ョ▼椤甸潰鑿滃崟鏂囨湰銆?*/
@@ -2206,6 +2219,33 @@ static void storage_draw_items(void)
     }
 }
 
+static void snapshot_review_draw_info(void)
+{
+    char line[48];
+
+    if (s_snapshot_review_loaded == 0U)
+    {
+        ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y,
+                                   "Info",
+                                   storage_service_status_text(s_snapshot_review_status),
+                                   PAGE_UI_CYAN_COLOR,
+                                   WHITE);
+        return;
+    }
+
+    snprintf(line, sizeof(line), "#%06lu", (unsigned long)s_snapshot_review_index);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW1_Y, "Snapshot", line, PAGE_UI_CYAN_COLOR, WHITE);
+
+    snprintf(line, sizeof(line), "%d.%dC", s_snapshot_review_snapshot.min_x10 / 10, s_snapshot_review_snapshot.min_x10 % 10);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW2_Y, "Min", line, PAGE_UI_CYAN_COLOR, WHITE);
+
+    snprintf(line, sizeof(line), "%d.%dC", s_snapshot_review_snapshot.max_x10 / 10, s_snapshot_review_snapshot.max_x10 % 10);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW3_Y, "Max", line, PAGE_UI_CYAN_COLOR, WHITE);
+
+    snprintf(line, sizeof(line), "%d.%dC", s_snapshot_review_snapshot.center_x10 / 10, s_snapshot_review_snapshot.center_x10 % 10);
+    ui_renderer_draw_value_row(PAGE_INFO_ROW4_Y, "Center", line, PAGE_UI_CYAN_COLOR, WHITE);
+}
+
 /* 鏍规嵁绱㈠紩缁樺埗宸ョ▼椤甸潰涓殑鍗曚釜鑿滃崟椤广€?*/
 static void engineering_draw_item(uint8_t index)
 {
@@ -2927,6 +2967,7 @@ static void storage_page_on_key(uint8_t key_value)
     storage_status_t status = STORAGE_STATUS_OK;
     storage_info_t info;
     char detail[24];
+    uint32_t saved_index = 0U;
 
     if (key_value == KEY1_PRES)
     {
@@ -2966,15 +3007,21 @@ static void storage_page_on_key(uint8_t key_value)
         }
         else if (s_storage_selected == 2U)
         {
-            status = storage_service_write_test_file();
-            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Write OK" : "Write failed",
-                                    storage_service_status_text(status));
+            status = snapshot_storage_save_latest(&saved_index);
+            if (status == STORAGE_STATUS_OK)
+            {
+                snprintf(detail, sizeof(detail), "#%06lu", (unsigned long)saved_index);
+                storage_page_set_notice("Snapshot OK", detail);
+            }
+            else
+            {
+                storage_page_set_notice("Snapshot fail", storage_service_status_text(status));
+            }
         }
-        else
+        else if (s_storage_selected == 3U)
         {
-            status = storage_service_read_test_file();
-            storage_page_set_notice((status == STORAGE_STATUS_OK) ? "Read OK" : "Read failed",
-                                    storage_service_status_text(status));
+            ui_manager_navigate_to(UI_PAGE_SNAPSHOT_REVIEW);
+            return;
         }
 
         ui_manager_force_full_refresh();
@@ -2997,6 +3044,90 @@ static void storage_page_render(uint8_t full_refresh)
     storage_draw_info_rows();
     storage_draw_items();
     ui_renderer_draw_footer(s_storage_notice_line1, s_storage_notice_line2);
+}
+
+static void snapshot_review_on_enter(ui_page_id_t previous_page)
+{
+    (void)previous_page;
+
+    memset(&s_snapshot_review_snapshot, 0, sizeof(s_snapshot_review_snapshot));
+    memset(s_snapshot_review_gray_frame, 0, sizeof(s_snapshot_review_gray_frame));
+    s_snapshot_review_index = 0U;
+    s_snapshot_review_loaded = 0U;
+    s_snapshot_review_status = snapshot_storage_load_latest(&s_snapshot_review_snapshot,
+                                                            &s_snapshot_review_index);
+
+    if (s_snapshot_review_status == STORAGE_STATUS_OK)
+    {
+        s_snapshot_review_status = snapshot_storage_build_gray_preview(&s_snapshot_review_snapshot,
+                                                                      s_snapshot_review_gray_frame);
+        s_snapshot_review_loaded = (s_snapshot_review_status == STORAGE_STATUS_OK) ? 1U : 0U;
+    }
+}
+
+static void snapshot_review_on_leave(ui_page_id_t next_page)
+{
+    (void)next_page;
+}
+
+static void snapshot_review_on_key(uint8_t key_value)
+{
+    if (key_value == UI_KEY_KEY2_LONG)
+    {
+        ui_manager_navigate_home();
+    }
+    else if (key_value == KEY1_PRES || key_value == KEY2_PRES || key_value == KEY3_PRES)
+    {
+        ui_manager_navigate_back();
+    }
+}
+
+static void snapshot_review_on_tick(void)
+{
+    page_async_handle_timeouts();
+}
+
+static void snapshot_review_render(uint8_t full_refresh)
+{
+    char footer_line1[40];
+    char footer_line2[40];
+
+    if (full_refresh == 0U)
+    {
+        return;
+    }
+
+    memset(footer_line1, 0, sizeof(footer_line1));
+    memset(footer_line2, 0, sizeof(footer_line2));
+
+    if (s_snapshot_review_loaded != 0U)
+    {
+        power_manager_acquire_lock(POWER_LOCK_DISPLAY_DMA);
+        (void)LCD_Disp_Thermal_Interpolated_DMA(s_snapshot_review_gray_frame);
+        power_manager_release_lock(POWER_LOCK_DISPLAY_DMA);
+
+        ui_renderer_draw_header_path("SD Card", "View Latest", PAGE_UI_ACCENT_COLOR);
+        snapshot_review_draw_info();
+        snprintf(footer_line1,
+                 sizeof(footer_line1),
+                 "#%06lu  %d.%dC/%d.%dC",
+                 (unsigned long)s_snapshot_review_index,
+                 s_snapshot_review_snapshot.min_x10 / 10,
+                 s_snapshot_review_snapshot.min_x10 % 10,
+                 s_snapshot_review_snapshot.max_x10 / 10,
+                 s_snapshot_review_snapshot.max_x10 % 10);
+        snprintf(footer_line2,
+                 sizeof(footer_line2),
+                 "Center %d.%dC  KEY2 Back",
+                 s_snapshot_review_snapshot.center_x10 / 10,
+                 s_snapshot_review_snapshot.center_x10 % 10);
+        ui_renderer_draw_footer(footer_line1, footer_line2);
+        return;
+    }
+
+    ui_renderer_draw_product_page("SD Card", "View Latest", PAGE_UI_ACCENT_COLOR);
+    snapshot_review_draw_info();
+    ui_renderer_draw_footer("No snapshot", storage_service_status_text(s_snapshot_review_status));
 }
 
 static void engineering_on_enter(ui_page_id_t previous_page)
@@ -4345,6 +4476,8 @@ ui_page_id_t page_registry_get_parent(ui_page_id_t page_id)
         return UI_PAGE_SYSTEM;
     case UI_PAGE_STORAGE:
         return UI_PAGE_SYSTEM;
+    case UI_PAGE_SNAPSHOT_REVIEW:
+        return UI_PAGE_STORAGE;
     case UI_PAGE_ENGINEERING:
         return UI_PAGE_SYSTEM;
     case UI_PAGE_HOME:

@@ -6,5 +6,6 @@
 void MYDMA_Config(void);
 uint8_t LCD_Disp_Thermal_Interpolated_DMA(uint8_t *data24x32);
 void set_color_mode(uint16_t mode);
+uint16_t lcd_dma_palette_color_rgb565(uint8_t pixel);
 
 #endif

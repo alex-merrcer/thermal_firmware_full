@@ -337,7 +337,7 @@
               <MiscControls></MiscControls>
               <Define>STM32F40_41xxx,USE_STDPERIPH_DRIVER,ARM_MATH_MATRIX_CHECK,ARM_MATH_ROUNDING,ARM_MATH_CM4,__CC_ARM,__FPU_PRESENT=1,INCLUDE_uxTaskGetStackHighWaterMark=1</Define>
               <Undefine></Undefine>
-              <IncludePath>..\USER;..\..\stm32F405RGT6-RedPic1-APP-common\APP\core;..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus;..\..\stm32F405RGT6-RedPic1-APP-common\CORE;..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\delay;..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\sys;..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\usart;..\..\stm32F405RGT6-RedPic1-APP-common\USER;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\board;..\..\stm32F405RGT6-RedPic1-APP-common\FWLIB\inc;..\..\stm32F405RGT6-RedPic1-APP-common\DSP_LIB\include;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\mlx90640;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\watchdog;..\..\protocol;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\battery;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\diagnostics;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\storage;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\snapshot;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\SDIO;..\..\stm32F405RGT6-RedPic1-APP-common\FATFS\src;..\..\stm32F405RGT6-RedPic1-APP-common\MALLOC;..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include;..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\portable\RVDS\ARM_CM4F</IncludePath>
+              <IncludePath>..\USER;..\..\stm32F405RGT6-RedPic1-APP-common\APP\core;..\..\stm32F405RGT6-RedPic1-APP-common\APP\service_bus;..\..\stm32F405RGT6-RedPic1-APP-common\CORE;..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\delay;..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\sys;..\..\stm32F405RGT6-RedPic1-APP-common\SYSTEM\usart;..\..\stm32F405RGT6-RedPic1-APP-common\USER;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\board;..\..\stm32F405RGT6-RedPic1-APP-common\FWLIB\inc;..\..\stm32F405RGT6-RedPic1-APP-common\DSP_LIB\include;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\input;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\display;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\mlx90640;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ota;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\watchdog;..\..\protocol;..\..\stm32F405RGT6-RedPic1-APP-common\DRIVERS\battery;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\diagnostics;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\thermal;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\ui;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\esp_host;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\power;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\settings;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\storage;..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\snapshot;..\..\stm32F405RGT6-RedPic1-APP-common\SDIO;..\..\stm32F405RGT6-RedPic1-APP-common\FATFS\src;..\..\stm32F405RGT6-RedPic1-APP-common\MALLOC;..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\include;..\..\stm32F405RGT6-RedPic1-APP-common\FreeRTOS\portable\RVDS\ARM_CM4F</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -682,9 +682,9 @@
           <GroupName>drivers/sdcard</GroupName>
           <Files>
             <File>
-              <FileName>sd_card_port_stub.c</FileName>
+              <FileName>sdio_sdcard.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\..\stm32F405RGT6-RedPic1-APP-common\FEATURES\storage\sd_card_port_stub.c</FilePath>
+              <FilePath>..\..\stm32F405RGT6-RedPic1-APP-common\SDIO\sdio_sdcard.c</FilePath>
             </File>
           </Files>
         </Group>
