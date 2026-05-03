@@ -80,6 +80,8 @@ int MLX90640_SetResolution(uint8_t slaveAddr, uint8_t resolution);
 int MLX90640_GetCurResolution(uint8_t slaveAddr);
 int MLX90640_SetRefreshRate(uint8_t slaveAddr, uint8_t refreshRate);   
 int MLX90640_GetRefreshRate(uint8_t slaveAddr);  
+int MLX90640_SetDataHold(uint8_t slaveAddr, uint8_t enable);
+int MLX90640_GetDataHold(uint8_t slaveAddr);
 int MLX90640_GetSubPageNumber(uint16_t *frameData);
 int MLX90640_GetCurMode(uint8_t slaveAddr); 
 int MLX90640_SetInterleavedMode(uint8_t slaveAddr);

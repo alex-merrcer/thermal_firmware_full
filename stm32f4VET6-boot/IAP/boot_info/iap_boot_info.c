@@ -1,90 +1,176 @@
+/**
+ * @file    iap_boot_info.c
+ * @brief   BootInfo 日志存储模块 —— A/B 分区管理与 OTA 事务记录
+ * @note    本模块实现基于日志区（Journal）的 BootInfo 和 OTA 事务记录存储，
+ *          支持多版本格式迁移（V1/V2/V3 → 当前版本），
+ *          采用 CRC32 校验和序列号机制确保数据完整性。
+ *
+ * @par 存储架构
+ *      日志区分为两个独立区域：
+ *      - BootInfo 日志区（BOOT_INFO_ADDR）：存储启动信息
+ *      - 事务日志区（0x0800E000）：存储 OTA 事务记录
+ *      每个区域包含多个 256 字节槽位，通过序列号选择最新有效记录。
+ *
+ * @par 槽位格式
+ *      每个 256 字节槽位包含：
+ *      - slot_magic（4B）：区域标识魔数
+ *      - slot_version（2B）：槽位格式版本
+ *      - payload_size（2B）：有效载荷大小
+ *      - slot_seq（4B）：序列号（用于选择最新记录）
+ *      - payload_crc32（4B）：有效载荷 CRC32 校验
+ *      - payload（236B）：有效载荷数据
+ *      - commit_magic（4B）：提交魔数（写入完成后设置）
+ *
+ * @par 版本迁移
+ *      支持从 V1（legacy_boot_info_t）、V2（BootInfoV2Legacy）、
+ *      V3（旧版 BootInfoTypeDef）自动迁移到当前版本格式。
+ *
+ * @par 事务验证
+ *      OTA 事务记录（OtaTxnRecord）通过 9 项校验确保数据合法性：
+ *      布局魔数、状态范围、分区合法性、字段范围、请求类型、
+ *      版本格式、偏移量一致性、CRC32 完整性。
+ *
+ * @version 2.0
+ * @date    2026-05-01
+ */
+
+/* =========================================================================
+ *  1. 头文件包含
+ * ======================================================================= */
+
 #include "iap_boot_info.h"
 
+/* 取消宏定义，避免与结构体字段冲突 */
 #undef active_partition
 #undef target_partition
 #undef app1_version
 #undef app2_version
 
+/* =========================================================================
+ *  2. 内部类型定义 —— 遗留格式与日志槽位
+ * ======================================================================= */
+
+/**
+ * @brief  V1 遗留 BootInfo 格式
+ */
 typedef struct
 {
-    uint32_t magic;
-    uint32_t boot_requested;
-    uint32_t active_partition;
-    uint32_t target_partition;
-    uint32_t boot_tries;
-    uint32_t trial_complete;
+    uint32_t magic;             /**< 启动魔数                         */
+    uint32_t boot_requested;    /**< 升级请求标志                     */
+    uint32_t active_partition;  /**< 当前活跃分区                     */
+    uint32_t target_partition;  /**< 目标升级分区                     */
+    uint32_t boot_tries;        /**< 剩余试启动次数                   */
+    uint32_t trial_complete;    /**< 试启动是否完成                   */
 } legacy_boot_info_t;
 
-#define BOOT_INFO_JOURNAL_REGION_ADDR BOOT_INFO_ADDR
-#define TXN_JOURNAL_REGION_ADDR       0x0800E000U
-#define IAP_JOURNAL_REGION_SIZE       0x2000U
-#define IAP_JOURNAL_SLOT_SIZE         256U
-#define IAP_JOURNAL_SLOT_COUNT        (IAP_JOURNAL_REGION_SIZE / IAP_JOURNAL_SLOT_SIZE)
-#define IAP_JOURNAL_PAYLOAD_SIZE      236U
-#define IAP_JOURNAL_SLOT_VERSION      1U
-#define IAP_JOURNAL_COMMIT_MAGIC      0x434D4954UL
-#define BOOT_INFO_JOURNAL_MAGIC       0x424A4E4CUL
-#define TXN_JOURNAL_MAGIC             0x544A4E4CUL
+/* =========================================================================
+ *  3. 内部宏定义 —— 日志区参数
+ * ======================================================================= */
 
+#define BOOT_INFO_JOURNAL_REGION_ADDR   BOOT_INFO_ADDR          /**< BootInfo 日志区起始地址 */
+#define TXN_JOURNAL_REGION_ADDR         0x0800E000U             /**< 事务日志区起始地址      */
+#define IAP_JOURNAL_REGION_SIZE         0x2000U                 /**< 日志区总大小（8KB）     */
+#define IAP_JOURNAL_SLOT_SIZE           256U                    /**< 单个槽位大小（256B）    */
+#define IAP_JOURNAL_SLOT_COUNT          (IAP_JOURNAL_REGION_SIZE / IAP_JOURNAL_SLOT_SIZE) /**< 槽位数 */
+#define IAP_JOURNAL_PAYLOAD_SIZE        236U                    /**< 有效载荷大小            */
+#define IAP_JOURNAL_SLOT_VERSION        1U                      /**< 槽位格式版本            */
+#define IAP_JOURNAL_COMMIT_MAGIC        0x434D4954UL            /**< 提交魔数："CMIT"       */
+#define BOOT_INFO_JOURNAL_MAGIC         0x424A4E4CUL            /**< BootInfo 日志魔数："BJNL" */
+#define TXN_JOURNAL_MAGIC               0x544A4E4CUL            /**< 事务日志魔数："TJNL"    */
+
+/* =========================================================================
+ *  4. 内部类型定义 —— 日志槽位与扫描结果
+ * ======================================================================= */
+
+/**
+ * @brief  日志槽位结构体（256 字节，编译时校验）
+ */
 typedef struct
 {
-    uint32_t slot_magic;
-    uint16_t slot_version;
-    uint16_t payload_size;
-    uint32_t slot_seq;
-    uint32_t payload_crc32;
-    uint8_t payload[IAP_JOURNAL_PAYLOAD_SIZE];
-    uint32_t commit_magic;
+    uint32_t slot_magic;                            /**< 区域标识魔数             */
+    uint16_t slot_version;                          /**< 槽位格式版本             */
+    uint16_t payload_size;                          /**< 有效载荷大小             */
+    uint32_t slot_seq;                              /**< 序列号（递增）           */
+    uint32_t payload_crc32;                         /**< 有效载荷 CRC32           */
+    uint8_t payload[IAP_JOURNAL_PAYLOAD_SIZE];      /**< 有效载荷数据             */
+    uint32_t commit_magic;                          /**< 提交魔数（最后写入）     */
 } iap_journal_slot_t;
 
+/**
+ * @brief  日志区扫描结果
+ */
 typedef struct
 {
-    uint8_t has_valid;
-    uint8_t has_empty;
-    uint32_t latest_seq;
-    uint32_t latest_addr;
-    uint32_t empty_addr;
-    uint32_t programmed_slots;
-    uint32_t invalid_slots;
+    uint8_t has_valid;          /**< 是否存在有效槽位             */
+    uint8_t has_empty;          /**< 是否存在空闲槽位             */
+    uint32_t latest_seq;        /**< 最新有效槽位的序列号         */
+    uint32_t latest_addr;       /**< 最新有效槽位的地址           */
+    uint32_t empty_addr;        /**< 第一个空闲槽位的地址         */
+    uint32_t programmed_slots;  /**< 已编程槽位数                 */
+    uint32_t invalid_slots;     /**< 无效槽位数                   */
 } iap_journal_scan_t;
 
+/**
+ * @brief  BootInfo 加载来源枚举
+ */
 typedef enum
 {
-    BOOT_INFO_LOAD_SOURCE_JOURNAL = 0U,
-    BOOT_INFO_LOAD_SOURCE_V3_LEGACY = 1U,
-    BOOT_INFO_LOAD_SOURCE_V2_LEGACY = 2U,
-    BOOT_INFO_LOAD_SOURCE_V1_LEGACY = 3U,
-    BOOT_INFO_LOAD_SOURCE_DEFAULT = 4U
+    BOOT_INFO_LOAD_SOURCE_JOURNAL     = 0U,   /**< 日志区加载               */
+    BOOT_INFO_LOAD_SOURCE_V3_LEGACY   = 1U,   /**< V3 遗留格式迁移          */
+    BOOT_INFO_LOAD_SOURCE_V2_LEGACY   = 2U,   /**< V2 遗留格式迁移          */
+    BOOT_INFO_LOAD_SOURCE_V1_LEGACY   = 3U,   /**< V1 遗留格式迁移          */
+    BOOT_INFO_LOAD_SOURCE_DEFAULT     = 4U    /**< 使用默认值初始化         */
 } boot_info_load_source_t;
 
+/** 有效载荷验证函数类型 */
 typedef uint8_t (*iap_payload_validator_t)(const void *payload);
 
+/**
+ * @brief  槽位验证结果枚举
+ */
 typedef enum
 {
-    IAP_JOURNAL_SLOT_VALID = 0U,
-    IAP_JOURNAL_SLOT_INVALID_HEADER = 1U,
-    IAP_JOURNAL_SLOT_INVALID_COMMIT = 2U,
-    IAP_JOURNAL_SLOT_INVALID_PAYLOAD_CRC = 3U,
-    IAP_JOURNAL_SLOT_INVALID_PAYLOAD_VALIDATE = 4U
+    IAP_JOURNAL_SLOT_VALID                  = 0U,   /**< 有效                     */
+    IAP_JOURNAL_SLOT_INVALID_HEADER         = 1U,   /**< 头部无效（魔数/版本/大小）*/
+    IAP_JOURNAL_SLOT_INVALID_COMMIT         = 2U,   /**< 提交魔数无效             */
+    IAP_JOURNAL_SLOT_INVALID_PAYLOAD_CRC    = 3U,   /**< 有效载荷 CRC 不匹配      */
+    IAP_JOURNAL_SLOT_INVALID_PAYLOAD_VALIDATE = 4U  /**< 有效载荷验证失败         */
 } iap_journal_slot_validate_result_t;
 
+/**
+ * @brief  事务记录验证失败原因枚举
+ */
 typedef enum
 {
-    IAP_TXN_VALIDATE_OK = 0U,
-    IAP_TXN_VALIDATE_LAYOUT = 1U,
-    IAP_TXN_VALIDATE_STATE = 2U,
-    IAP_TXN_VALIDATE_PARTITION = 3U,
-    IAP_TXN_VALIDATE_FIELDS = 4U,
-    IAP_TXN_VALIDATE_REQUEST_TYPE = 5U,
-    IAP_TXN_VALIDATE_VERSION_TEXT = 6U,
-    IAP_TXN_VALIDATE_OFFSET = 7U,
-    IAP_TXN_VALIDATE_DATA_CRC = 8U
+    IAP_TXN_VALIDATE_OK             = 0U,   /**< 验证通过                 */
+    IAP_TXN_VALIDATE_LAYOUT         = 1U,   /**< 布局魔数/版本/大小不匹配 */
+    IAP_TXN_VALIDATE_STATE          = 2U,   /**< 状态值超出范围           */
+    IAP_TXN_VALIDATE_PARTITION      = 3U,   /**< 分区槽位非法             */
+    IAP_TXN_VALIDATE_FIELDS         = 4U,   /**< 字段值超出范围           */
+    IAP_TXN_VALIDATE_REQUEST_TYPE   = 5U,   /**< 请求类型非法             */
+    IAP_TXN_VALIDATE_VERSION_TEXT   = 6U,   /**< 版本字符串格式非法       */
+    IAP_TXN_VALIDATE_OFFSET         = 7U,   /**< 偏移量不一致             */
+    IAP_TXN_VALIDATE_DATA_CRC       = 8U    /**< 数据 CRC 不匹配         */
 } iap_txn_validate_reason_t;
 
+/** 前置声明：事务有效载荷验证函数 */
 static uint8_t txn_payload_is_valid(const void *payload);
 
+/** 编译时校验：iap_journal_slot_t 大小必须为 256 字节 */
 typedef char iap_journal_slot_size_check[(sizeof(iap_journal_slot_t) == IAP_JOURNAL_SLOT_SIZE) ? 1 : -1];
 
+/* =========================================================================
+ *  5. 内部函数实现 —— CRC32 计算
+ * ======================================================================= */
+
+/**
+ * @brief  CRC32 增量计算（IEEE 802.3 多项式）
+ * @note   多项式：0xEDB88320（反转形式），初始值和最终异或值为 0xFFFFFFFF。
+ * @param  crc    — 当前 CRC 值
+ * @param  data   — 输入数据
+ * @param  length — 数据长度
+ * @return 更新后的 CRC32 值
+ */
 static uint32_t iap_crc32_update(uint32_t crc, const uint8_t *data, uint32_t length)
 {
     uint32_t i = 0U;
@@ -110,6 +196,18 @@ static uint32_t iap_crc32_update(uint32_t crc, const uint8_t *data, uint32_t len
     return ~crc;
 }
 
+/* =========================================================================
+ *  6. 内部函数实现 —— 版本字符串工具
+ * ======================================================================= */
+
+/**
+ * @brief  校验版本字段格式（固定长度缓冲区版本）
+ * @note   格式要求："X.Y.Z"，其中 X/Y/Z 为十进制数字，
+ *         必须包含 2 个点号和至少 3 个数字。
+ * @param  field     — 版本字符串
+ * @param  field_len — 缓冲区长度
+ * @retval 1 — 格式合法；0 — 格式非法
+ */
 static uint8_t boot_version_field_is_valid(const char *field, uint32_t field_len)
 {
     uint32_t i = 0U;
@@ -148,12 +246,18 @@ static uint8_t boot_version_field_is_valid(const char *field, uint32_t field_len
             continue;
         }
 
-        return 0U;
+        return 0U;  /* 非法字符 */
     }
 
-    return 0U;
+    return 0U;  /* 未遇到终止符 */
 }
 
+/**
+ * @brief  从版本字符串中读取一个数字分量
+ * @param  cursor — 输入/输出：字符串游标指针
+ * @param  value  — 输出：解析出的数值
+ * @retval 1 — 读取成功；0 — 读取失败
+ */
 static uint8_t version_read_component(const char **cursor, uint32_t *value)
 {
     const char *ptr = 0;
@@ -183,6 +287,16 @@ static uint8_t version_read_component(const char **cursor, uint32_t *value)
     return 1U;
 }
 
+/* =========================================================================
+ *  7. 内部函数实现 —— BootInfo 辅助函数
+ * ======================================================================= */
+
+/**
+ * @brief  获取分区版本字符串指针
+ * @param  info      — BootInfo 指针
+ * @param  partition — 分区编号
+ * @return 版本字符串指针（越界时返回 APP1 版本）
+ */
 static char *boot_info_partition_version_ptr(BootInfoTypeDef *info, uint32_t partition)
 {
     if (info == 0)
@@ -198,6 +312,11 @@ static char *boot_info_partition_version_ptr(BootInfoTypeDef *info, uint32_t par
     return info->slot_versions[partition];
 }
 
+/**
+ * @brief  计算 BootInfo 的 CRC32
+ * @param  info — BootInfo 指针
+ * @return CRC32 值
+ */
 static uint32_t boot_info_compute_crc(const BootInfoTypeDef *info)
 {
     const uint8_t *data_start = 0;
@@ -213,6 +332,11 @@ static uint32_t boot_info_compute_crc(const BootInfoTypeDef *info)
     return iap_crc32_update(0U, data_start, data_len);
 }
 
+/**
+ * @brief  计算 V2 遗留 BootInfo 的 CRC32
+ * @param  info — V2 BootInfo 指针
+ * @return CRC32 值
+ */
 static uint32_t boot_info_compute_crc_v2(const BootInfoV2Legacy *info)
 {
     const uint8_t *data_start = 0;
@@ -228,6 +352,11 @@ static uint32_t boot_info_compute_crc_v2(const BootInfoV2Legacy *info)
     return iap_crc32_update(0U, data_start, data_len);
 }
 
+/**
+ * @brief  计算 OTA 事务记录的 CRC32
+ * @param  txn — 事务记录指针
+ * @return CRC32 值
+ */
 static uint32_t txn_compute_crc(const OtaTxnRecord *txn)
 {
     const uint8_t *data_start = 0;
@@ -243,6 +372,14 @@ static uint32_t txn_compute_crc(const OtaTxnRecord *txn)
     return iap_crc32_update(0U, data_start, data_len);
 }
 
+/* =========================================================================
+ *  8. 公共接口实现 —— 事务记录初始化与验证
+ * ======================================================================= */
+
+/**
+ * @brief  初始化事务记录为默认值
+ * @param  txn — 事务记录指针
+ */
 void txn_init_default(OtaTxnRecord *txn)
 {
     if (txn == 0)
@@ -251,30 +388,34 @@ void txn_init_default(OtaTxnRecord *txn)
     }
 
     memset(txn, 0, sizeof(*txn));
-    txn->layout_magic = IAP_TXN_LAYOUT_MAGIC;
-    txn->layout_version = IAP_TXN_LAYOUT_VERSION;
-    txn->struct_size = (uint16_t)sizeof(OtaTxnRecord);
-    txn->txn_counter = 0U;
-    txn->state = IAP_TXN_STATE_IDLE;
-    txn->request_type = OTA_CTRL_REQ_TYPE_UPGRADE;
-    txn->active_slot = OTA_CTRL_PARTITION_APP1;
-    txn->target_slot = OTA_CTRL_PARTITION_APP2;
+    txn->layout_magic       = IAP_TXN_LAYOUT_MAGIC;
+    txn->layout_version     = IAP_TXN_LAYOUT_VERSION;
+    txn->struct_size        = (uint16_t)sizeof(OtaTxnRecord);
+    txn->txn_counter        = 0U;
+    txn->state              = IAP_TXN_STATE_IDLE;
+    txn->request_type       = OTA_CTRL_REQ_TYPE_UPGRADE;
+    txn->active_slot        = OTA_CTRL_PARTITION_APP1;
+    txn->target_slot        = OTA_CTRL_PARTITION_APP2;
     version_text_copy(txn->current_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
-    version_text_copy(txn->target_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
-    txn->last_error_stage = 0U;
-    txn->last_error_code = 0U;
-    txn->retryable = 0U;
+    version_text_copy(txn->target_version,  BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
+    txn->last_error_stage   = 0U;
+    txn->last_error_code    = 0U;
+    txn->retryable          = 0U;
     txn->transfer_total_size = 0U;
-    txn->protocol_version = OTA_CTRL_PROTOCOL_VERSION;
-    txn->checkpoint_size = OTA_DATA_DEFAULT_CHECKPOINT_SIZE;
-    txn->chunk_size = OTA_DATA_DEFAULT_CHUNK_SIZE;
-    txn->plain_size = 0U;
-    txn->resume_offset = 0U;
-    txn->last_acked_offset = 0U;
-    txn->pause_reason = IAP_TXN_PAUSE_NONE;
-    txn->data_crc32 = txn_compute_crc(txn);
+    txn->protocol_version   = OTA_CTRL_PROTOCOL_VERSION;
+    txn->checkpoint_size    = OTA_DATA_DEFAULT_CHECKPOINT_SIZE;
+    txn->chunk_size         = OTA_DATA_DEFAULT_CHUNK_SIZE;
+    txn->plain_size         = 0U;
+    txn->resume_offset      = 0U;
+    txn->last_acked_offset  = 0U;
+    txn->pause_reason       = IAP_TXN_PAUSE_NONE;
+    txn->data_crc32         = txn_compute_crc(txn);
 }
 
+/**
+ * @brief  准备事务记录用于存储（规范化字段 + 计算 CRC）
+ * @param  txn — 事务记录指针
+ */
 static void txn_prepare_for_store(OtaTxnRecord *txn)
 {
     if (txn == 0)
@@ -282,21 +423,25 @@ static void txn_prepare_for_store(OtaTxnRecord *txn)
         return;
     }
 
-    txn->layout_magic = IAP_TXN_LAYOUT_MAGIC;
+    /* 确保布局字段正确 */
+    txn->layout_magic   = IAP_TXN_LAYOUT_MAGIC;
     txn->layout_version = IAP_TXN_LAYOUT_VERSION;
-    txn->struct_size = (uint16_t)sizeof(OtaTxnRecord);
+    txn->struct_size    = (uint16_t)sizeof(OtaTxnRecord);
 
+    /* 规范化状态范围 */
     if (txn->state > IAP_TXN_STATE_FAILED_TERMINAL)
     {
         txn->state = IAP_TXN_STATE_IDLE;
     }
 
+    /* 规范化请求类型 */
     if (txn->request_type != OTA_CTRL_REQ_TYPE_UPGRADE &&
         txn->request_type != OTA_CTRL_REQ_TYPE_ROLLBACK)
     {
         txn->request_type = OTA_CTRL_REQ_TYPE_UPGRADE;
     }
 
+    /* 规范化分区槽位 */
     if (txn->active_slot > OTA_CTRL_PARTITION_APP2)
     {
         txn->active_slot = OTA_CTRL_PARTITION_APP1;
@@ -308,8 +453,11 @@ static void txn_prepare_for_store(OtaTxnRecord *txn)
         txn->target_slot = boot_info_inactive_partition(txn->active_slot);
     }
 
+    /* 规范化版本字符串 */
     version_text_copy(txn->current_version, BOOT_INFO_VERSION_LEN, txn->current_version);
-    version_text_copy(txn->target_version, BOOT_INFO_VERSION_LEN, txn->target_version);
+    version_text_copy(txn->target_version,  BOOT_INFO_VERSION_LEN, txn->target_version);
+
+    /* 规范化其他字段 */
     txn->retryable = (txn->retryable != 0U) ? 1U : 0U;
     if (txn->protocol_version == 0U)
     {
@@ -332,9 +480,15 @@ static void txn_prepare_for_store(OtaTxnRecord *txn)
         txn->pause_reason = IAP_TXN_PAUSE_NONE;
     }
 
+    /* 计算 CRC */
     txn->data_crc32 = txn_compute_crc(txn);
 }
 
+/**
+ * @brief  返回事务记录验证失败的具体原因
+ * @param  txn — 事务记录指针
+ * @return 验证结果枚举值
+ */
 static iap_txn_validate_reason_t txn_validate_reason(const OtaTxnRecord *txn)
 {
     if (txn == 0)
@@ -342,6 +496,7 @@ static iap_txn_validate_reason_t txn_validate_reason(const OtaTxnRecord *txn)
         return IAP_TXN_VALIDATE_LAYOUT;
     }
 
+    /* 检查布局字段 */
     if (txn->layout_magic != IAP_TXN_LAYOUT_MAGIC ||
         txn->layout_version != IAP_TXN_LAYOUT_VERSION ||
         txn->struct_size != sizeof(OtaTxnRecord))
@@ -349,11 +504,13 @@ static iap_txn_validate_reason_t txn_validate_reason(const OtaTxnRecord *txn)
         return IAP_TXN_VALIDATE_LAYOUT;
     }
 
+    /* 检查状态范围 */
     if (txn->state > IAP_TXN_STATE_FAILED_TERMINAL)
     {
         return IAP_TXN_VALIDATE_STATE;
     }
 
+    /* 检查分区合法性 */
     if (txn->active_slot > OTA_CTRL_PARTITION_APP2 ||
         txn->target_slot > OTA_CTRL_PARTITION_APP2 ||
         txn->target_slot == txn->active_slot)
@@ -361,6 +518,7 @@ static iap_txn_validate_reason_t txn_validate_reason(const OtaTxnRecord *txn)
         return IAP_TXN_VALIDATE_PARTITION;
     }
 
+    /* 检查字段范围 */
     if (txn->retryable > 1U ||
         txn->pause_reason > IAP_TXN_PAUSE_TERMINAL ||
         txn->chunk_size > OTA_DATA_MAX_PAYLOAD_LEN)
@@ -368,23 +526,27 @@ static iap_txn_validate_reason_t txn_validate_reason(const OtaTxnRecord *txn)
         return IAP_TXN_VALIDATE_FIELDS;
     }
 
+    /* 检查请求类型 */
     if (txn->request_type != OTA_CTRL_REQ_TYPE_UPGRADE &&
         txn->request_type != OTA_CTRL_REQ_TYPE_ROLLBACK)
     {
         return IAP_TXN_VALIDATE_REQUEST_TYPE;
     }
 
+    /* 检查版本字符串格式 */
     if (boot_version_field_is_valid(txn->current_version, sizeof(txn->current_version)) == 0U ||
         boot_version_field_is_valid(txn->target_version, sizeof(txn->target_version)) == 0U)
     {
         return IAP_TXN_VALIDATE_VERSION_TEXT;
     }
 
+    /* 检查偏移量一致性 */
     if (txn->last_acked_offset < txn->resume_offset)
     {
         return IAP_TXN_VALIDATE_OFFSET;
     }
 
+    /* 检查 CRC 完整性 */
     if (txn->data_crc32 != txn_compute_crc(txn))
     {
         return IAP_TXN_VALIDATE_DATA_CRC;
@@ -393,11 +555,27 @@ static iap_txn_validate_reason_t txn_validate_reason(const OtaTxnRecord *txn)
     return IAP_TXN_VALIDATE_OK;
 }
 
+/**
+ * @brief  检查事务记录是否有效
+ * @param  txn — 事务记录指针
+ * @retval 1 — 有效；0 — 无效
+ */
 static uint8_t txn_is_valid(const OtaTxnRecord *txn)
 {
     return (txn_validate_reason(txn) == IAP_TXN_VALIDATE_OK) ? 1U : 0U;
 }
 
+/* =========================================================================
+ *  9. 内部函数实现 —— 日志序列号管理
+ * ======================================================================= */
+
+/**
+ * @brief  判断候选序列号是否比当前序列号更新
+ * @note   使用有符号差值判断，处理 32 位溢出情况。
+ * @param  candidate — 候选序列号
+ * @param  current   — 当前序列号
+ * @retval 1 — 更新；0 — 不更新
+ */
 static uint8_t journal_seq_is_newer(uint32_t candidate, uint32_t current)
 {
     if (candidate == 0U || candidate == 0xFFFFFFFFUL)
@@ -413,6 +591,11 @@ static uint8_t journal_seq_is_newer(uint32_t candidate, uint32_t current)
     return (((int32_t)(candidate - current)) > 0) ? 1U : 0U;
 }
 
+/**
+ * @brief  计算下一个序列号
+ * @param  current — 当前序列号
+ * @return 下一个序列号（跳过 0 和 0xFFFFFFFF）
+ */
 static uint32_t journal_seq_next(uint32_t current)
 {
     uint32_t next = current + 1U;
@@ -425,6 +608,15 @@ static uint32_t journal_seq_next(uint32_t current)
     return next;
 }
 
+/* =========================================================================
+ *  10. 内部函数实现 —— 日志槽位验证
+ * ======================================================================= */
+
+/**
+ * @brief  检查槽位是否已擦除（全 0xFF）
+ * @param  slot — 槽位指针
+ * @retval 1 — 已擦除；0 — 未擦除或指针无效
+ */
 static uint8_t journal_slot_is_erased(const iap_journal_slot_t *slot)
 {
     const uint32_t *words = (const uint32_t *)slot;
@@ -446,6 +638,14 @@ static uint8_t journal_slot_is_erased(const iap_journal_slot_t *slot)
     return 1U;
 }
 
+/**
+ * @brief  返回槽位验证失败的具体原因
+ * @param  slot              — 槽位指针
+ * @param  expected_magic    — 期望的区域魔数
+ * @param  payload_size      — 期望的有效载荷大小
+ * @param  payload_validator — 有效载荷验证回调（可为 NULL）
+ * @return 验证结果枚举值
+ */
 static iap_journal_slot_validate_result_t journal_slot_validate_reason(const iap_journal_slot_t *slot,
                                                                        uint32_t expected_magic,
                                                                        uint16_t payload_size,
@@ -456,11 +656,13 @@ static iap_journal_slot_validate_result_t journal_slot_validate_reason(const iap
         return IAP_JOURNAL_SLOT_INVALID_HEADER;
     }
 
+    /* 检查提交魔数 */
     if (slot->commit_magic != IAP_JOURNAL_COMMIT_MAGIC)
     {
         return IAP_JOURNAL_SLOT_INVALID_COMMIT;
     }
 
+    /* 检查头部字段 */
     if (slot->slot_magic != expected_magic ||
         slot->slot_version != IAP_JOURNAL_SLOT_VERSION ||
         slot->payload_size != payload_size ||
@@ -470,11 +672,13 @@ static iap_journal_slot_validate_result_t journal_slot_validate_reason(const iap
         return IAP_JOURNAL_SLOT_INVALID_HEADER;
     }
 
+    /* 检查有效载荷 CRC */
     if (iap_crc32_update(0U, slot->payload, payload_size) != slot->payload_crc32)
     {
         return IAP_JOURNAL_SLOT_INVALID_PAYLOAD_CRC;
     }
 
+    /* 检查有效载荷内容 */
     if (payload_validator != 0 && payload_validator((const void *)slot->payload) == 0U)
     {
         return IAP_JOURNAL_SLOT_INVALID_PAYLOAD_VALIDATE;
@@ -483,6 +687,14 @@ static iap_journal_slot_validate_result_t journal_slot_validate_reason(const iap
     return IAP_JOURNAL_SLOT_VALID;
 }
 
+/**
+ * @brief  检查槽位是否有效
+ * @param  slot              — 槽位指针
+ * @param  expected_magic    — 期望的区域魔数
+ * @param  payload_size      — 期望的有效载荷大小
+ * @param  payload_validator — 有效载荷验证回调（可为 NULL）
+ * @retval 1 — 有效；0 — 无效
+ */
 static uint8_t journal_slot_is_valid(const iap_journal_slot_t *slot,
                                      uint32_t expected_magic,
                                      uint16_t payload_size,
@@ -494,6 +706,15 @@ static uint8_t journal_slot_is_valid(const iap_journal_slot_t *slot,
                                          payload_validator) == IAP_JOURNAL_SLOT_VALID) ? 1U : 0U;
 }
 
+/* =========================================================================
+ *  11. 内部函数实现 —— 诊断记录
+ * ======================================================================= */
+
+/**
+ * @brief  记录事务验证失败原因到诊断结构
+ * @param  diag — 诊断结构指针
+ * @param  txn  — 事务记录指针
+ */
 static void txn_diag_record_validate_reason(iap_txn_load_diag_t *diag, const OtaTxnRecord *txn)
 {
     if (diag == 0 || txn == 0)
@@ -503,35 +724,24 @@ static void txn_diag_record_validate_reason(iap_txn_load_diag_t *diag, const Ota
 
     switch (txn_validate_reason(txn))
     {
-    case IAP_TXN_VALIDATE_LAYOUT:
-        diag->invalid_txn_layout++;
-        break;
-    case IAP_TXN_VALIDATE_STATE:
-        diag->invalid_txn_state++;
-        break;
-    case IAP_TXN_VALIDATE_PARTITION:
-        diag->invalid_txn_partition++;
-        break;
-    case IAP_TXN_VALIDATE_FIELDS:
-        diag->invalid_txn_fields++;
-        break;
-    case IAP_TXN_VALIDATE_REQUEST_TYPE:
-        diag->invalid_txn_request_type++;
-        break;
-    case IAP_TXN_VALIDATE_VERSION_TEXT:
-        diag->invalid_txn_version_text++;
-        break;
-    case IAP_TXN_VALIDATE_OFFSET:
-        diag->invalid_txn_offset++;
-        break;
-    case IAP_TXN_VALIDATE_DATA_CRC:
-        diag->invalid_txn_data_crc++;
-        break;
-    default:
-        break;
+    case IAP_TXN_VALIDATE_LAYOUT:       diag->invalid_txn_layout++;         break;
+    case IAP_TXN_VALIDATE_STATE:        diag->invalid_txn_state++;          break;
+    case IAP_TXN_VALIDATE_PARTITION:    diag->invalid_txn_partition++;      break;
+    case IAP_TXN_VALIDATE_FIELDS:       diag->invalid_txn_fields++;         break;
+    case IAP_TXN_VALIDATE_REQUEST_TYPE: diag->invalid_txn_request_type++;   break;
+    case IAP_TXN_VALIDATE_VERSION_TEXT: diag->invalid_txn_version_text++;   break;
+    case IAP_TXN_VALIDATE_OFFSET:       diag->invalid_txn_offset++;         break;
+    case IAP_TXN_VALIDATE_DATA_CRC:     diag->invalid_txn_data_crc++;       break;
+    default: break;
     }
 }
 
+/**
+ * @brief  记录槽位验证失败原因到诊断结构
+ * @param  diag   — 诊断结构指针
+ * @param  reason — 槽位验证结果
+ * @param  slot   — 槽位指针（用于进一步分析事务验证）
+ */
 static void txn_diag_record_slot_reason(iap_txn_load_diag_t *diag,
                                         iap_journal_slot_validate_result_t reason,
                                         const iap_journal_slot_t *slot)
@@ -543,27 +753,34 @@ static void txn_diag_record_slot_reason(iap_txn_load_diag_t *diag,
 
     switch (reason)
     {
-    case IAP_JOURNAL_SLOT_INVALID_HEADER:
-        diag->invalid_slot_header++;
-        break;
-    case IAP_JOURNAL_SLOT_INVALID_COMMIT:
-        diag->invalid_slot_commit++;
-        break;
-    case IAP_JOURNAL_SLOT_INVALID_PAYLOAD_CRC:
-        diag->invalid_slot_payload_crc++;
-        break;
+    case IAP_JOURNAL_SLOT_INVALID_HEADER:       diag->invalid_slot_header++;            break;
+    case IAP_JOURNAL_SLOT_INVALID_COMMIT:       diag->invalid_slot_commit++;            break;
+    case IAP_JOURNAL_SLOT_INVALID_PAYLOAD_CRC:  diag->invalid_slot_payload_crc++;       break;
     case IAP_JOURNAL_SLOT_INVALID_PAYLOAD_VALIDATE:
         diag->invalid_slot_payload_validate++;
+        /* 若有效载荷验证失败，进一步分析事务记录的具体错误原因 */
         if (slot != 0)
         {
             txn_diag_record_validate_reason(diag, (const OtaTxnRecord *)(const void *)slot->payload);
         }
         break;
-    default:
-        break;
+    default: break;
     }
 }
 
+/* =========================================================================
+ *  12. 内部函数实现 —— 日志区扫描
+ * ======================================================================= */
+
+/**
+ * @brief  扫描日志区，找到最新有效记录和空闲槽位
+ * @param  region_addr       — 日志区起始地址
+ * @param  expected_magic    — 期望的区域魔数
+ * @param  payload_size      — 期望的有效载荷大小
+ * @param  payload_validator — 有效载荷验证回调
+ * @param  latest_payload    — 输出：最新有效记录的有效载荷（可为 NULL）
+ * @param  scan              — 输出：扫描结果
+ */
 static void journal_scan_region(uint32_t region_addr,
                                 uint32_t expected_magic,
                                 uint16_t payload_size,
@@ -585,6 +802,7 @@ static void journal_scan_region(uint32_t region_addr,
         uint32_t slot_addr = region_addr + (index * IAP_JOURNAL_SLOT_SIZE);
         const iap_journal_slot_t *slot = (const iap_journal_slot_t *)slot_addr;
 
+        /* 跳过已擦除的槽位，记录第一个空闲地址 */
         if (journal_slot_is_erased(slot) != 0U)
         {
             if (scan->has_empty == 0U)
@@ -596,16 +814,19 @@ static void journal_scan_region(uint32_t region_addr,
         }
 
         scan->programmed_slots++;
+
+        /* 验证槽位有效性 */
         if (journal_slot_is_valid(slot, expected_magic, payload_size, payload_validator) == 0U)
         {
             scan->invalid_slots++;
             continue;
         }
 
+        /* 更新最新有效记录 */
         if (scan->has_valid == 0U || journal_seq_is_newer(slot->slot_seq, scan->latest_seq) != 0U)
         {
-            scan->has_valid = 1U;
-            scan->latest_seq = slot->slot_seq;
+            scan->has_valid   = 1U;
+            scan->latest_seq  = slot->slot_seq;
             scan->latest_addr = slot_addr;
             if (latest_payload != 0)
             {
@@ -615,6 +836,12 @@ static void journal_scan_region(uint32_t region_addr,
     }
 }
 
+/**
+ * @brief  扫描事务日志区（带诊断信息记录）
+ * @param  latest_payload — 输出：最新有效事务记录
+ * @param  scan           — 输出：扫描结果
+ * @param  diag           — 输出：诊断信息（可为 NULL）
+ */
 static void txn_scan_region(OtaTxnRecord *latest_payload,
                             iap_journal_scan_t *scan,
                             iap_txn_load_diag_t *diag)
@@ -634,6 +861,7 @@ static void txn_scan_region(OtaTxnRecord *latest_payload,
         const iap_journal_slot_t *slot = (const iap_journal_slot_t *)slot_addr;
         iap_journal_slot_validate_result_t slot_reason = IAP_JOURNAL_SLOT_VALID;
 
+        /* 跳过已擦除的槽位 */
         if (journal_slot_is_erased(slot) != 0U)
         {
             if (scan->has_empty == 0U)
@@ -645,6 +873,8 @@ static void txn_scan_region(OtaTxnRecord *latest_payload,
         }
 
         scan->programmed_slots++;
+
+        /* 验证槽位有效性（带详细诊断） */
         slot_reason = journal_slot_validate_reason(slot,
                                                    TXN_JOURNAL_MAGIC,
                                                    (uint16_t)sizeof(OtaTxnRecord),
@@ -656,10 +886,11 @@ static void txn_scan_region(OtaTxnRecord *latest_payload,
             continue;
         }
 
+        /* 更新最新有效记录 */
         if (scan->has_valid == 0U || journal_seq_is_newer(slot->slot_seq, scan->latest_seq) != 0U)
         {
-            scan->has_valid = 1U;
-            scan->latest_seq = slot->slot_seq;
+            scan->has_valid   = 1U;
+            scan->latest_seq  = slot->slot_seq;
             scan->latest_addr = slot_addr;
             if (latest_payload != 0)
             {
@@ -669,6 +900,18 @@ static void txn_scan_region(OtaTxnRecord *latest_payload,
     }
 }
 
+/* =========================================================================
+ *  13. 内部函数实现 —— 日志槽位写入
+ * ======================================================================= */
+
+/**
+ * @brief  构建日志槽位镜像
+ * @param  slot         — 输出：槽位镜像
+ * @param  slot_magic   — 区域魔数
+ * @param  payload_size — 有效载荷大小
+ * @param  slot_seq     — 序列号
+ * @param  payload      — 有效载荷数据
+ */
 static void journal_build_slot(iap_journal_slot_t *slot,
                                uint32_t slot_magic,
                                uint16_t payload_size,
@@ -676,15 +919,22 @@ static void journal_build_slot(iap_journal_slot_t *slot,
                                const void *payload)
 {
     memset(slot, 0xFF, sizeof(*slot));
-    slot->slot_magic = slot_magic;
-    slot->slot_version = IAP_JOURNAL_SLOT_VERSION;
-    slot->payload_size = payload_size;
-    slot->slot_seq = slot_seq;
+    slot->slot_magic    = slot_magic;
+    slot->slot_version  = IAP_JOURNAL_SLOT_VERSION;
+    slot->payload_size  = payload_size;
+    slot->slot_seq      = slot_seq;
     slot->payload_crc32 = iap_crc32_update(0U, (const uint8_t *)payload, payload_size);
     memcpy(slot->payload, payload, payload_size);
-    slot->commit_magic = IAP_JOURNAL_COMMIT_MAGIC;
+    slot->commit_magic  = IAP_JOURNAL_COMMIT_MAGIC;
 }
 
+/**
+ * @brief  将日志槽位写入 Flash
+ * @note   先写入除 commit_magic 外的所有数据，最后写入 commit_magic 作为提交标记。
+ * @param  slot_addr — 目标地址
+ * @param  slot      — 槽位镜像
+ * @retval 0 — 写入成功；1 — 写入失败
+ */
 static uint32_t journal_write_slot(uint32_t slot_addr, const iap_journal_slot_t *slot)
 {
     uint32_t write_addr = slot_addr;
@@ -696,11 +946,13 @@ static uint32_t journal_write_slot(uint32_t slot_addr, const iap_journal_slot_t 
         return 1U;
     }
 
+    /* 写入除 commit_magic 外的所有数据 */
     if (FLASH_If_Write(&write_addr, (uint32_t *)(void *)slot, word_len) != 0U)
     {
         return 1U;
     }
 
+    /* 最后写入 commit_magic 作为提交标记 */
     commit_value = slot->commit_magic;
     if (FLASH_If_Write(&write_addr, &commit_value, 1U) != 0U)
     {
@@ -710,6 +962,15 @@ static uint32_t journal_write_slot(uint32_t slot_addr, const iap_journal_slot_t 
     return 0U;
 }
 
+/**
+ * @brief  擦除并重写整个日志区
+ * @note   用于日志区满时的压缩操作。
+ * @param  boot_info — BootInfo 数据
+ * @param  boot_seq  — BootInfo 序列号
+ * @param  txn       — 事务记录数据
+ * @param  txn_seq   — 事务记录序列号
+ * @retval 0 — 成功；1 — 失败
+ */
 static uint32_t journal_rewrite_sector(const BootInfoTypeDef *boot_info,
                                        uint32_t boot_seq,
                                        const OtaTxnRecord *txn,
@@ -723,17 +984,13 @@ static uint32_t journal_rewrite_sector(const BootInfoTypeDef *boot_info,
         return 1U;
     }
 
-    journal_build_slot(&boot_slot,
-                       BOOT_INFO_JOURNAL_MAGIC,
-                       (uint16_t)sizeof(BootInfoTypeDef),
-                       boot_seq,
-                       boot_info);
-    journal_build_slot(&txn_slot,
-                       TXN_JOURNAL_MAGIC,
-                       (uint16_t)sizeof(OtaTxnRecord),
-                       txn_seq,
-                       txn);
+    /* 构建两个槽位镜像 */
+    journal_build_slot(&boot_slot, BOOT_INFO_JOURNAL_MAGIC,
+                       (uint16_t)sizeof(BootInfoTypeDef), boot_seq, boot_info);
+    journal_build_slot(&txn_slot, TXN_JOURNAL_MAGIC,
+                       (uint16_t)sizeof(OtaTxnRecord), txn_seq, txn);
 
+    /* 擦除日志区 */
     FLASH_Unlock();
     if (MY_FLASH_Erase(BOOT_INFO_JOURNAL_REGION_ADDR) != 0U)
     {
@@ -742,6 +999,7 @@ static uint32_t journal_rewrite_sector(const BootInfoTypeDef *boot_info,
     }
     FLASH_Lock();
 
+    /* 写入两个槽位 */
     if (journal_write_slot(BOOT_INFO_JOURNAL_REGION_ADDR, &boot_slot) != 0U)
     {
         return 1U;
@@ -755,6 +1013,17 @@ static uint32_t journal_rewrite_sector(const BootInfoTypeDef *boot_info,
     return 0U;
 }
 
+/* =========================================================================
+ *  14. 内部函数实现 —— BootInfo 初始化与验证
+ * ======================================================================= */
+
+/**
+ * @brief  设置最小允许 OTA 版本（取三者中最大值）
+ * @param  target — 输出：目标缓冲区
+ * @param  left   — 候选版本 1
+ * @param  right  — 候选版本 2
+ * @param  third  — 候选版本 3
+ */
 static void boot_info_set_min_version(char *target,
                                       const char *left,
                                       const char *right,
@@ -775,6 +1044,10 @@ static void boot_info_set_min_version(char *target,
     version_text_copy(target, BOOT_INFO_VERSION_LEN, candidate);
 }
 
+/**
+ * @brief  初始化 BootInfo 为默认值
+ * @param  info — BootInfo 指针
+ */
 static void boot_info_init_default(BootInfoTypeDef *info)
 {
     if (info == 0)
@@ -783,27 +1056,32 @@ static void boot_info_init_default(BootInfoTypeDef *info)
     }
 
     memset(info, 0, sizeof(*info));
-    info->layout_magic = BOOT_INFO_LAYOUT_MAGIC;
+    info->layout_magic   = BOOT_INFO_LAYOUT_MAGIC;
     info->layout_version = BOOT_INFO_LAYOUT_VERSION;
-    info->struct_size = (uint16_t)sizeof(BootInfoTypeDef);
-    info->boot_magic = MAGIC_NORMAL;
-    info->upgrade_flag = BOOT_UPGRADE_FLAG_NONE;
-    info->active_slot = BOOT_INFO_PARTITION_APP2;
-    info->target_slot = BOOT_INFO_PARTITION_APP1;
+    info->struct_size    = (uint16_t)sizeof(BootInfoTypeDef);
+    info->boot_magic     = MAGIC_NORMAL;
+    info->upgrade_flag   = BOOT_UPGRADE_FLAG_NONE;
+    info->active_slot    = BOOT_INFO_PARTITION_APP2;
+    info->target_slot    = BOOT_INFO_PARTITION_APP1;
     info->confirmed_slot = BOOT_INFO_PARTITION_APP2;
-    info->trial_state = BOOT_INFO_TRIAL_NONE;
-    info->boot_tries = IAP_MAX_BOOT_TRIES;
+    info->trial_state    = BOOT_INFO_TRIAL_NONE;
+    info->boot_tries     = IAP_MAX_BOOT_TRIES;
     info->rollback_counter = 0U;
     version_text_copy(info->slot_versions[BOOT_INFO_SLOT_APP1], BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
     version_text_copy(info->slot_versions[BOOT_INFO_SLOT_APP2], BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
-    version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
+    version_text_copy(info->last_good_version,      BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
     version_text_copy(info->min_allowed_ota_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
-    version_text_copy(info->pending_floor_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
+    version_text_copy(info->pending_floor_version,   BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
     boot_info_sync_current_version(info);
     version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN, info->current_version);
     info->data_crc32 = boot_info_compute_crc(info);
 }
 
+/**
+ * @brief  校验 BootInfo 数据合法性
+ * @param  info — BootInfo 指针
+ * @retval 1 — 合法；0 — 非法
+ */
 static uint8_t boot_info_is_valid(const BootInfoTypeDef *info)
 {
     if (info == 0)
@@ -811,6 +1089,7 @@ static uint8_t boot_info_is_valid(const BootInfoTypeDef *info)
         return 0U;
     }
 
+    /* 检查布局字段 */
     if (info->layout_magic != BOOT_INFO_LAYOUT_MAGIC ||
         info->layout_version != BOOT_INFO_LAYOUT_VERSION ||
         info->struct_size != sizeof(BootInfoTypeDef))
@@ -818,6 +1097,7 @@ static uint8_t boot_info_is_valid(const BootInfoTypeDef *info)
         return 0U;
     }
 
+    /* 检查字段范围 */
     if (info->active_slot > OTA_CTRL_PARTITION_APP2 ||
         info->target_slot > OTA_CTRL_PARTITION_APP2 ||
         info->confirmed_slot > OTA_CTRL_PARTITION_APP2 ||
@@ -828,6 +1108,7 @@ static uint8_t boot_info_is_valid(const BootInfoTypeDef *info)
         return 0U;
     }
 
+    /* 检查启动魔数 */
     if (info->boot_magic != MAGIC_NORMAL &&
         info->boot_magic != MAGIC_REQUEST &&
         info->boot_magic != MAGIC_NEW_FW)
@@ -835,6 +1116,7 @@ static uint8_t boot_info_is_valid(const BootInfoTypeDef *info)
         return 0U;
     }
 
+    /* 检查所有版本字符串格式 */
     if (boot_version_field_is_valid(info->current_version, sizeof(info->current_version)) == 0U ||
         boot_version_field_is_valid(info->slot_versions[BOOT_INFO_SLOT_APP1], BOOT_INFO_VERSION_LEN) == 0U ||
         boot_version_field_is_valid(info->slot_versions[BOOT_INFO_SLOT_APP2], BOOT_INFO_VERSION_LEN) == 0U ||
@@ -845,31 +1127,49 @@ static uint8_t boot_info_is_valid(const BootInfoTypeDef *info)
         return 0U;
     }
 
+    /* 检查当前版本与活跃分区版本一致 */
     if (strcmp(info->current_version,
                boot_info_get_partition_version(info, info->active_slot)) != 0)
     {
         return 0U;
     }
 
+    /* 非试启动状态下，已确认分区必须等于活跃分区 */
     if (info->trial_state == BOOT_INFO_TRIAL_NONE &&
         info->confirmed_slot != info->active_slot)
     {
         return 0U;
     }
 
+    /* 最终 CRC 校验 */
     return (info->data_crc32 == boot_info_compute_crc(info)) ? 1U : 0U;
 }
 
+/**
+ * @brief  BootInfo 有效载荷验证回调
+ */
 static uint8_t boot_info_payload_is_valid(const void *payload)
 {
     return boot_info_is_valid((const BootInfoTypeDef *)payload);
 }
 
+/**
+ * @brief  事务记录有效载荷验证回调
+ */
 static uint8_t txn_payload_is_valid(const void *payload)
 {
     return txn_is_valid((const OtaTxnRecord *)payload);
 }
 
+/* =========================================================================
+ *  15. 内部函数实现 —— V2/V1 遗留格式验证与迁移
+ * ======================================================================= */
+
+/**
+ * @brief  校验 V2 遗留 BootInfo 合法性
+ * @param  info — V2 BootInfo 指针
+ * @retval 1 — 合法；0 — 非法
+ */
 static uint8_t boot_info_v2_is_valid(const BootInfoV2Legacy *info)
 {
     if (info == 0)
@@ -909,6 +1209,11 @@ static uint8_t boot_info_v2_is_valid(const BootInfoV2Legacy *info)
     return (info->data_crc32 == boot_info_compute_crc_v2(info)) ? 1U : 0U;
 }
 
+/**
+ * @brief  检查 V1 遗留 BootInfo 是否合理
+ * @param  legacy — V1 BootInfo 指针
+ * @retval 1 — 合理；0 — 不合理
+ */
 static uint8_t legacy_boot_info_is_plausible(const legacy_boot_info_t *legacy)
 {
     if (legacy == 0)
@@ -935,6 +1240,11 @@ static uint8_t legacy_boot_info_is_plausible(const legacy_boot_info_t *legacy)
     return 1U;
 }
 
+/**
+ * @brief  从 V2 遗留格式迁移到当前版本
+ * @param  legacy — V2 BootInfo 指针
+ * @param  info   — 输出：当前版本 BootInfo
+ */
 static void boot_info_migrate_v2(const BootInfoV2Legacy *legacy, BootInfoTypeDef *info)
 {
     boot_info_init_default(info);
@@ -944,35 +1254,41 @@ static void boot_info_migrate_v2(const BootInfoV2Legacy *legacy, BootInfoTypeDef
         return;
     }
 
-    info->boot_magic = legacy->boot_magic;
+    /* 复制基本字段 */
+    info->boot_magic   = legacy->boot_magic;
     info->upgrade_flag = legacy->upgrade_flag;
-    info->active_slot = legacy->active_partition;
-    info->target_slot = legacy->target_partition;
-    info->boot_tries = legacy->boot_tries;
+    info->active_slot  = legacy->active_partition;
+    info->target_slot  = legacy->target_partition;
+    info->boot_tries   = legacy->boot_tries;
     version_text_copy(info->slot_versions[BOOT_INFO_SLOT_APP1], BOOT_INFO_VERSION_LEN, legacy->app1_version);
     version_text_copy(info->slot_versions[BOOT_INFO_SLOT_APP2], BOOT_INFO_VERSION_LEN, legacy->app2_version);
     boot_info_sync_current_version(info);
 
+    /* 根据试启动状态设置已确认分区 */
     if (legacy->trial_complete != 0U)
     {
         info->confirmed_slot = info->active_slot;
-        info->trial_state = BOOT_INFO_TRIAL_NONE;
+        info->trial_state    = BOOT_INFO_TRIAL_NONE;
         version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN, info->current_version);
     }
     else
     {
         info->confirmed_slot = boot_info_inactive_partition(info->active_slot);
-        info->trial_state = BOOT_INFO_TRIAL_PENDING;
-        version_text_copy(info->last_good_version,
-                          BOOT_INFO_VERSION_LEN,
+        info->trial_state    = BOOT_INFO_TRIAL_PENDING;
+        version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN,
                           boot_info_get_partition_version(info, info->confirmed_slot));
     }
 
     version_text_copy(info->min_allowed_ota_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
-    version_text_copy(info->pending_floor_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
+    version_text_copy(info->pending_floor_version,   BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
     info->data_crc32 = boot_info_compute_crc(info);
 }
 
+/**
+ * @brief  从 V1 遗留格式迁移到当前版本
+ * @param  legacy — V1 BootInfo 指针
+ * @param  info   — 输出：当前版本 BootInfo
+ */
 static void boot_info_migrate_v1(const legacy_boot_info_t *legacy, BootInfoTypeDef *info)
 {
     boot_info_init_default(info);
@@ -982,11 +1298,11 @@ static void boot_info_migrate_v1(const legacy_boot_info_t *legacy, BootInfoTypeD
         return;
     }
 
-    info->boot_magic = legacy->magic;
+    info->boot_magic   = legacy->magic;
     info->upgrade_flag = legacy->boot_requested;
-    info->active_slot = legacy->active_partition;
-    info->target_slot = legacy->target_partition;
-    info->boot_tries = legacy->boot_tries;
+    info->active_slot  = legacy->active_partition;
+    info->target_slot  = legacy->target_partition;
+    info->boot_tries   = legacy->boot_tries;
     info->confirmed_slot = (legacy->trial_complete != 0U) ?
                            info->active_slot :
                            boot_info_inactive_partition(info->active_slot);
@@ -994,12 +1310,16 @@ static void boot_info_migrate_v1(const legacy_boot_info_t *legacy, BootInfoTypeD
                         BOOT_INFO_TRIAL_NONE :
                         BOOT_INFO_TRIAL_PENDING;
     boot_info_sync_current_version(info);
-    version_text_copy(info->last_good_version,
-                      BOOT_INFO_VERSION_LEN,
+    version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN,
                       boot_info_get_partition_version(info, info->confirmed_slot));
     info->data_crc32 = boot_info_compute_crc(info);
 }
 
+/**
+ * @brief  规范化 BootInfo 字段（修复不一致的值）
+ * @param  info — BootInfo 指针（原地修改）
+ * @retval 1 — 有字段被修正；0 — 无需修正
+ */
 static uint8_t boot_info_normalize(BootInfoTypeDef *info)
 {
     uint8_t changed = 0U;
@@ -1009,6 +1329,7 @@ static uint8_t boot_info_normalize(BootInfoTypeDef *info)
         return 0U;
     }
 
+    /* 规范化分区槽位 */
     if (info->active_slot > OTA_CTRL_PARTITION_APP2)
     {
         info->active_slot = OTA_CTRL_PARTITION_APP2;
@@ -1030,6 +1351,7 @@ static uint8_t boot_info_normalize(BootInfoTypeDef *info)
         changed = 1U;
     }
 
+    /* 规范化版本字符串 */
     if (boot_version_field_is_valid(info->slot_versions[BOOT_INFO_SLOT_APP1], BOOT_INFO_VERSION_LEN) == 0U)
     {
         version_text_copy(info->slot_versions[BOOT_INFO_SLOT_APP1], BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
@@ -1044,8 +1366,7 @@ static uint8_t boot_info_normalize(BootInfoTypeDef *info)
 
     if (boot_version_field_is_valid(info->last_good_version, BOOT_INFO_VERSION_LEN) == 0U)
     {
-        version_text_copy(info->last_good_version,
-                          BOOT_INFO_VERSION_LEN,
+        version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN,
                           boot_info_get_partition_version(info, info->confirmed_slot));
         changed = 1U;
     }
@@ -1062,12 +1383,14 @@ static uint8_t boot_info_normalize(BootInfoTypeDef *info)
         changed = 1U;
     }
 
+    /* 规范化试启动次数 */
     if (info->boot_tries == 0U || info->boot_tries > IAP_MAX_BOOT_TRIES)
     {
         info->boot_tries = IAP_MAX_BOOT_TRIES;
         changed = 1U;
     }
 
+    /* 同步当前版本 */
     if (strcmp(info->current_version,
                boot_info_get_partition_version(info, info->active_slot)) != 0)
     {
@@ -1075,6 +1398,7 @@ static uint8_t boot_info_normalize(BootInfoTypeDef *info)
         changed = 1U;
     }
 
+    /* 非试启动状态下，已确认分区必须等于活跃分区 */
     if (info->trial_state == BOOT_INFO_TRIAL_NONE &&
         info->confirmed_slot != info->active_slot)
     {
@@ -1085,6 +1409,15 @@ static uint8_t boot_info_normalize(BootInfoTypeDef *info)
     return changed;
 }
 
+/* =========================================================================
+ *  16. 公共接口实现 —— 版本字符串操作
+ * ======================================================================= */
+
+/**
+ * @brief  校验版本字符串格式（以 null 结尾的字符串版本）
+ * @param  version — 版本字符串
+ * @retval 1 — 格式合法；0 — 格式非法
+ */
 uint8_t version_text_is_valid(const char *version)
 {
     uint32_t i = 0U;
@@ -1124,6 +1457,13 @@ uint8_t version_text_is_valid(const char *version)
     return (has_digit != 0U && dot_count == 2U) ? 1U : 0U;
 }
 
+/**
+ * @brief  安全复制版本字符串
+ * @note   若源无效则使用默认版本 "0.0.0"。
+ * @param  target     — 目标缓冲区
+ * @param  target_len — 缓冲区长度
+ * @param  source     — 源字符串
+ */
 void version_text_copy(char *target, uint32_t target_len, const char *source)
 {
     uint32_t i = 0U;
@@ -1134,39 +1474,51 @@ void version_text_copy(char *target, uint32_t target_len, const char *source)
         return;
     }
 
+    /* 自复制时检查有效性 */
     if (value == target)
     {
         if (version_text_is_valid(target) != 0U)
         {
             return;
         }
-
         value = IAP_DEFAULT_VERSION;
     }
 
+    /* 源无效时使用默认值 */
     if (value == 0 || version_text_is_valid(value) == 0U)
     {
         value = IAP_DEFAULT_VERSION;
     }
 
+    /* 清空目标缓冲区 */
     for (i = 0U; i < target_len; ++i)
     {
         target[i] = '\0';
     }
 
+    /* 复制字符串 */
     for (i = 0U; i + 1U < target_len && value[i] != '\0'; ++i)
     {
         target[i] = value[i];
     }
 }
 
+/**
+ * @brief  比较两个版本字符串
+ * @note   逐分量比较（X.Y.Z 格式），使用 version_read_component 解析。
+ * @param  left  — 版本 A
+ * @param  right — 版本 B
+ * @retval  1 — A > B
+ * @retval  0 — A == B（或格式非法）
+ * @retval -1 — A < B
+ */
 int32_t version_text_compare(const char *left, const char *right)
 {
-    const char *left_ptr = left;
+    const char *left_ptr  = left;
     const char *right_ptr = right;
-    uint32_t left_value = 0U;
-    uint32_t right_value = 0U;
-    uint8_t index = 0U;
+    uint32_t left_value   = 0U;
+    uint32_t right_value  = 0U;
+    uint8_t index         = 0U;
 
     if (version_text_is_valid(left) == 0U || version_text_is_valid(right) == 0U)
     {
@@ -1190,6 +1542,7 @@ int32_t version_text_compare(const char *left, const char *right)
             return -1;
         }
 
+        /* 跳过分隔符 '.' */
         if (index < 2U)
         {
             if (*left_ptr != '.' || *right_ptr != '.')
@@ -1205,6 +1558,16 @@ int32_t version_text_compare(const char *left, const char *right)
     return 0;
 }
 
+/* =========================================================================
+ *  17. 公共接口实现 —— BootInfo 分区操作
+ * ======================================================================= */
+
+/**
+ * @brief  获取指定分区的版本字符串
+ * @param  info      — BootInfo 指针
+ * @param  partition — 分区编号
+ * @return 版本字符串（无效时返回默认版本）
+ */
 const char *boot_info_get_partition_version(const BootInfoTypeDef *info, uint32_t partition)
 {
     if (info == 0 || partition >= BOOT_INFO_SLOT_COUNT)
@@ -1220,16 +1583,30 @@ const char *boot_info_get_partition_version(const BootInfoTypeDef *info, uint32_
     return info->slot_versions[partition];
 }
 
+/**
+ * @brief  获取分区的 Flash 起始地址
+ * @param  partition — 分区编号
+ * @return Flash 地址
+ */
 uint32_t boot_info_partition_address(uint32_t partition)
 {
     return (partition == OTA_CTRL_PARTITION_APP2) ? FLASH_APP2_ADDR : FLASH_APP1_ADDR;
 }
 
+/**
+ * @brief  获取非活跃分区编号
+ * @param  active_partition — 当前活跃分区
+ * @return 非活跃分区编号
+ */
 uint32_t boot_info_inactive_partition(uint32_t active_partition)
 {
     return (active_partition == OTA_CTRL_PARTITION_APP2) ? OTA_CTRL_PARTITION_APP1 : OTA_CTRL_PARTITION_APP2;
 }
 
+/**
+ * @brief  同步当前版本字符串为活跃分区的版本
+ * @param  info — BootInfo 指针
+ */
 void boot_info_sync_current_version(BootInfoTypeDef *info)
 {
     if (info == 0)
@@ -1242,6 +1619,11 @@ void boot_info_sync_current_version(BootInfoTypeDef *info)
                       boot_info_get_partition_version(info, info->active_slot));
 }
 
+/**
+ * @brief  标记待安装的固件信息
+ * @param  info    — BootInfo 指针
+ * @param  payload — OTA 镜像头部有效载荷
+ */
 void boot_info_mark_pending_install(BootInfoTypeDef *info, const OtaImageHeaderPayload *payload)
 {
     if (info == 0 || payload == 0)
@@ -1252,18 +1634,22 @@ void boot_info_mark_pending_install(BootInfoTypeDef *info, const OtaImageHeaderP
     version_text_copy(boot_info_partition_version_ptr(info, payload->target_slot),
                       BOOT_INFO_VERSION_LEN,
                       payload->firmware_version);
-    info->boot_magic = MAGIC_NEW_FW;
+    info->boot_magic   = MAGIC_NEW_FW;
     info->upgrade_flag = BOOT_UPGRADE_FLAG_NONE;
-    info->active_slot = payload->target_slot;
-    info->target_slot = boot_info_inactive_partition(payload->target_slot);
-    info->trial_state = BOOT_INFO_TRIAL_PENDING;
-    info->boot_tries = IAP_MAX_BOOT_TRIES;
-    version_text_copy(info->pending_floor_version,
-                      BOOT_INFO_VERSION_LEN,
-                      payload->min_allowed_version);
+    info->active_slot  = payload->target_slot;
+    info->target_slot  = boot_info_inactive_partition(payload->target_slot);
+    info->trial_state  = BOOT_INFO_TRIAL_PENDING;
+    info->boot_tries   = IAP_MAX_BOOT_TRIES;
+    version_text_copy(info->pending_floor_version, BOOT_INFO_VERSION_LEN, payload->min_allowed_version);
     boot_info_sync_current_version(info);
 }
 
+/**
+ * @brief  切换到已确认分区
+ * @param  info — BootInfo 指针
+ * @param  slot — 目标分区
+ * @retval 1 — 切换成功
+ */
 uint8_t boot_info_switch_to_confirmed_slot(BootInfoTypeDef *info, uint32_t slot)
 {
     if (info == 0 || slot > OTA_CTRL_PARTITION_APP2)
@@ -1271,13 +1657,13 @@ uint8_t boot_info_switch_to_confirmed_slot(BootInfoTypeDef *info, uint32_t slot)
         return 0U;
     }
 
-    info->boot_magic = MAGIC_NORMAL;
+    info->boot_magic   = MAGIC_NORMAL;
     info->upgrade_flag = BOOT_UPGRADE_FLAG_NONE;
-    info->active_slot = slot;
-    info->target_slot = boot_info_inactive_partition(slot);
+    info->active_slot  = slot;
+    info->target_slot  = boot_info_inactive_partition(slot);
     info->confirmed_slot = slot;
-    info->trial_state = BOOT_INFO_TRIAL_NONE;
-    info->boot_tries = IAP_MAX_BOOT_TRIES;
+    info->trial_state  = BOOT_INFO_TRIAL_NONE;
+    info->boot_tries   = IAP_MAX_BOOT_TRIES;
     boot_info_sync_current_version(info);
     version_text_copy(info->last_good_version, BOOT_INFO_VERSION_LEN, info->current_version);
     version_text_copy(info->pending_floor_version, BOOT_INFO_VERSION_LEN, IAP_DEFAULT_VERSION);
@@ -1288,6 +1674,14 @@ uint8_t boot_info_switch_to_confirmed_slot(BootInfoTypeDef *info, uint32_t slot)
     return 1U;
 }
 
+/* =========================================================================
+ *  18. 内部函数实现 —— BootInfo 读取与存储
+ * ======================================================================= */
+
+/**
+ * @brief  准备 BootInfo 用于存储（布局字段 + CRC）
+ * @param  info — BootInfo 指针
+ */
 static void boot_info_prepare_for_store(BootInfoTypeDef *info)
 {
     if (info == 0)
@@ -1295,13 +1689,22 @@ static void boot_info_prepare_for_store(BootInfoTypeDef *info)
         return;
     }
 
-    info->layout_magic = BOOT_INFO_LAYOUT_MAGIC;
+    info->layout_magic   = BOOT_INFO_LAYOUT_MAGIC;
     info->layout_version = BOOT_INFO_LAYOUT_VERSION;
-    info->struct_size = (uint16_t)sizeof(BootInfoTypeDef);
+    info->struct_size    = (uint16_t)sizeof(BootInfoTypeDef);
     boot_info_sync_current_version(info);
     info->data_crc32 = boot_info_compute_crc(info);
 }
 
+/**
+ * @brief  从多版本来源读取当前 BootInfo
+ * @note   按优先级尝试：日志区 → V3 遗留 → V2 遗留 → V1 遗留 → 默认值。
+ * @param  info              — 输出：BootInfo
+ * @param  scan              — 输出：日志区扫描结果（可为 NULL）
+ * @param  normalized_changed — 输出：规范化是否修改了字段（可为 NULL）
+ * @param  normalize_loaded  — 是否对加载的数据执行规范化
+ * @return 加载来源枚举值
+ */
 static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
                                                       iap_journal_scan_t *scan,
                                                       uint8_t *normalized_changed,
@@ -1327,6 +1730,7 @@ static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
         return BOOT_INFO_LOAD_SOURCE_DEFAULT;
     }
 
+    /* 优先尝试日志区 */
     journal_scan_region(BOOT_INFO_JOURNAL_REGION_ADDR,
                         BOOT_INFO_JOURNAL_MAGIC,
                         (uint16_t)sizeof(BootInfoTypeDef),
@@ -1350,6 +1754,7 @@ static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
         return BOOT_INFO_LOAD_SOURCE_JOURNAL;
     }
 
+    /* 尝试 V3 遗留格式 */
     memcpy(&stored_v3, (const void *)BOOT_INFO_ADDR, sizeof(stored_v3));
     if (boot_info_is_valid(&stored_v3) != 0U)
     {
@@ -1369,6 +1774,7 @@ static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
         return BOOT_INFO_LOAD_SOURCE_V3_LEGACY;
     }
 
+    /* 尝试 V2 遗留格式 */
     memcpy(&stored_v2, (const void *)BOOT_INFO_ADDR, sizeof(stored_v2));
     if (boot_info_v2_is_valid(&stored_v2) != 0U)
     {
@@ -1388,6 +1794,7 @@ static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
         return BOOT_INFO_LOAD_SOURCE_V2_LEGACY;
     }
 
+    /* 尝试 V1 遗留格式 */
     memcpy(&legacy, (const void *)BOOT_INFO_ADDR, sizeof(legacy));
     if (legacy_boot_info_is_plausible(&legacy) != 0U)
     {
@@ -1407,6 +1814,7 @@ static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
         return BOOT_INFO_LOAD_SOURCE_V1_LEGACY;
     }
 
+    /* 使用默认值 */
     boot_info_init_default(info);
     if (normalize_loaded != 0U)
     {
@@ -1415,6 +1823,13 @@ static boot_info_load_source_t boot_info_read_current(BootInfoTypeDef *info,
     return BOOT_INFO_LOAD_SOURCE_DEFAULT;
 }
 
+/**
+ * @brief  从日志区读取当前事务记录（带诊断）
+ * @param  txn  — 输出：事务记录
+ * @param  scan — 输出：扫描结果（可为 NULL）
+ * @param  diag — 输出：诊断信息（可为 NULL）
+ * @retval 1 — 找到有效记录；0 — 使用默认值
+ */
 static uint8_t txn_read_current_with_diag(OtaTxnRecord *txn,
                                           iap_journal_scan_t *scan,
                                           iap_txn_load_diag_t *diag)
@@ -1443,11 +1858,33 @@ static uint8_t txn_read_current_with_diag(OtaTxnRecord *txn,
     return 0U;
 }
 
+/**
+ * @brief  从日志区读取当前事务记录
+ * @param  txn  — 输出：事务记录
+ * @param  scan — 输出：扫描结果（可为 NULL）
+ * @retval 1 — 找到有效记录；0 — 使用默认值
+ */
 static uint8_t txn_read_current(OtaTxnRecord *txn, iap_journal_scan_t *scan)
 {
     return txn_read_current_with_diag(txn, scan, 0);
 }
 
+/* =========================================================================
+ *  19. 内部函数实现 —— 日志提交
+ * ======================================================================= */
+
+/**
+ * @brief  提交 BootInfo 和/或事务记录到日志区
+ * @note   策略：
+ *         - 若数据未变更，跳过写入
+ *         - 若有空闲槽位，追加写入
+ *         - 若无空闲槽位，擦除并重写整个日志区
+ * @param  new_boot_info — 新的 BootInfo（可为 NULL）
+ * @param  new_txn_info  — 新的事务记录（可为 NULL）
+ * @param  update_boot   — 是否更新 BootInfo
+ * @param  update_txn    — 是否更新事务记录
+ * @retval 0 — 成功；1 — 失败
+ */
 static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
                                        const OtaTxnRecord *new_txn_info,
                                        uint8_t update_boot,
@@ -1461,16 +1898,18 @@ static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
     iap_journal_scan_t txn_scan;
     iap_journal_slot_t slot_image;
     uint32_t boot_seq = 1U;
-    uint32_t txn_seq = 1U;
+    uint32_t txn_seq  = 1U;
     uint8_t need_rewrite = 0U;
     uint8_t need_txn_bootstrap = 0U;
 
+    /* 读取当前记录 */
     (void)boot_info_read_current(&current_boot, &boot_scan, 0, 0U);
     (void)txn_read_current(&current_txn, &txn_scan);
 
     final_boot = current_boot;
-    final_txn = current_txn;
+    final_txn  = current_txn;
 
+    /* 应用更新 */
     if (update_boot != 0U && new_boot_info != 0)
     {
         final_boot = *new_boot_info;
@@ -1481,10 +1920,12 @@ static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
         final_txn = *new_txn_info;
     }
 
+    /* 规范化并计算 CRC */
     (void)boot_info_normalize(&final_boot);
     boot_info_prepare_for_store(&final_boot);
     txn_prepare_for_store(&final_txn);
 
+    /* 检查是否实际变更 */
     if (update_boot != 0U &&
         boot_scan.has_valid != 0U &&
         memcmp(&current_boot, &final_boot, sizeof(final_boot)) == 0)
@@ -1501,6 +1942,7 @@ static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
 
     need_txn_bootstrap = (txn_scan.has_valid == 0U) ? 1U : 0U;
 
+    /* 判断是否需要擦除重写 */
     if (boot_scan.has_valid == 0U)
     {
         need_rewrite = 1U;
@@ -1515,11 +1957,13 @@ static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
         need_rewrite = 1U;
     }
 
+    /* 无需更新 */
     if (update_boot == 0U && update_txn == 0U && need_txn_bootstrap == 0U)
     {
         return 0U;
     }
 
+    /* 擦除重写模式 */
     if (need_rewrite != 0U)
     {
         if (update_boot != 0U)
@@ -1548,6 +1992,7 @@ static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
         return journal_rewrite_sector(&final_boot, boot_seq, &final_txn, txn_seq);
     }
 
+    /* 追加写入模式 */
     if (update_boot != 0U)
     {
         boot_seq = journal_seq_next(boot_scan.latest_seq);
@@ -1585,6 +2030,15 @@ static uint32_t journal_commit_records(const BootInfoTypeDef *new_boot_info,
     return 0U;
 }
 
+/* =========================================================================
+ *  20. 公共接口实现 —— BootInfo/事务记录 读写
+ * ======================================================================= */
+
+/**
+ * @brief  保存 BootInfo 到日志区
+ * @param  info — BootInfo 指针
+ * @retval 0 — 成功；1 — 失败
+ */
 uint32_t boot_info_save(const BootInfoTypeDef *info)
 {
     if (info == 0)
@@ -1595,6 +2049,12 @@ uint32_t boot_info_save(const BootInfoTypeDef *info)
     return journal_commit_records(info, 0, 1U, 0U);
 }
 
+/**
+ * @brief  从日志区加载 BootInfo
+ * @note   自动处理多版本迁移和规范化，
+ *         若来源不是日志区或有规范化变更则重新保存。
+ * @param  info — 输出：BootInfo
+ */
 void boot_info_load(BootInfoTypeDef *info)
 {
     boot_info_load_source_t source = BOOT_INFO_LOAD_SOURCE_DEFAULT;
@@ -1610,6 +2070,7 @@ void boot_info_load(BootInfoTypeDef *info)
     source = boot_info_read_current(info, 0, &normalized_changed, 1U);
     (void)txn_read_current(&txn, &txn_scan);
 
+    /* 若来源不是日志区、有规范化变更、或事务日志为空，则重新保存 */
     if (source != BOOT_INFO_LOAD_SOURCE_JOURNAL ||
         normalized_changed != 0U ||
         txn_scan.has_valid == 0U)
@@ -1618,11 +2079,20 @@ void boot_info_load(BootInfoTypeDef *info)
     }
 }
 
+/**
+ * @brief  从日志区加载事务记录
+ * @param  txn — 输出：事务记录
+ */
 void txn_load(OtaTxnRecord *txn)
 {
     (void)txn_read_current(txn, 0);
 }
 
+/**
+ * @brief  从日志区加载事务记录（带诊断信息）
+ * @param  txn  — 输出：事务记录
+ * @param  diag — 输出：诊断信息
+ */
 void txn_load_with_diag(OtaTxnRecord *txn, iap_txn_load_diag_t *diag)
 {
     iap_journal_scan_t scan;
@@ -1636,10 +2106,10 @@ void txn_load_with_diag(OtaTxnRecord *txn, iap_txn_load_diag_t *diag)
 
     memset(diag, 0, sizeof(*diag));
     has_valid = txn_read_current_with_diag(txn, &scan, diag);
-    diag->has_valid = has_valid;
-    diag->latest_seq = scan.latest_seq;
-    diag->programmed_slots = scan.programmed_slots;
-    diag->invalid_slots = scan.invalid_slots;
+    diag->has_valid         = has_valid;
+    diag->latest_seq        = scan.latest_seq;
+    diag->programmed_slots  = scan.programmed_slots;
+    diag->invalid_slots     = scan.invalid_slots;
 
     if (has_valid != 0U)
     {
@@ -1655,6 +2125,11 @@ void txn_load_with_diag(OtaTxnRecord *txn, iap_txn_load_diag_t *diag)
     }
 }
 
+/**
+ * @brief  保存事务记录到日志区
+ * @param  txn — 事务记录指针
+ * @retval 0 — 成功；1 — 失败
+ */
 uint32_t txn_save(const OtaTxnRecord *txn)
 {
     if (txn == 0)
@@ -1665,6 +2140,12 @@ uint32_t txn_save(const OtaTxnRecord *txn)
     return journal_commit_records(0, txn, 0U, 1U);
 }
 
+/**
+ * @brief  压缩日志区（重写 BootInfo + 事务记录）
+ * @param  boot_info — BootInfo 指针
+ * @param  txn       — 事务记录指针
+ * @retval 0 — 成功；1 — 失败
+ */
 uint32_t txn_compact_with_boot_info(const BootInfoTypeDef *boot_info, const OtaTxnRecord *txn)
 {
     BootInfoTypeDef current_boot;
@@ -1674,7 +2155,7 @@ uint32_t txn_compact_with_boot_info(const BootInfoTypeDef *boot_info, const OtaT
     iap_journal_scan_t boot_scan;
     iap_journal_scan_t txn_scan;
     uint32_t boot_seq = 1U;
-    uint32_t txn_seq = 1U;
+    uint32_t txn_seq  = 1U;
 
     if (boot_info == 0 || txn == 0)
     {
@@ -1682,7 +2163,7 @@ uint32_t txn_compact_with_boot_info(const BootInfoTypeDef *boot_info, const OtaT
     }
 
     prepared_boot = *boot_info;
-    prepared_txn = *txn;
+    prepared_txn  = *txn;
 
     (void)boot_info_normalize(&prepared_boot);
     boot_info_prepare_for_store(&prepared_boot);
@@ -1704,6 +2185,10 @@ uint32_t txn_compact_with_boot_info(const BootInfoTypeDef *boot_info, const OtaT
     return journal_rewrite_sector(&prepared_boot, boot_seq, &prepared_txn, txn_seq);
 }
 
+/**
+ * @brief  清除事务记录（重置为默认值）
+ * @retval 0 — 成功；1 — 失败
+ */
 uint32_t txn_clear(void)
 {
     OtaTxnRecord txn;

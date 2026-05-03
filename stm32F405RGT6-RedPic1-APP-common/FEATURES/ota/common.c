@@ -13,8 +13,10 @@ uint32_t SerialKeyPressed(uint8_t *key)
 
 void SerialPutChar(uint8_t c)
 {
+  uint32_t timeout = 500000UL;
   USART_SendData(USART1, c);
   while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET)
   {
+    if (--timeout == 0U) { return; }
   }
 }

@@ -11,7 +11,9 @@ typedef enum
     WATCHDOG_PROGRESS_ESP_HOST  = (1UL << 3),
     WATCHDOG_PROGRESS_BATTERY   = (1UL << 4),
     WATCHDOG_PROGRESS_UI        = (1UL << 5),
-    WATCHDOG_PROGRESS_POWER     = (1UL << 6)
+    WATCHDOG_PROGRESS_POWER     = (1UL << 6),
+    WATCHDOG_PROGRESS_DISPLAY   = (1UL << 7),
+    WATCHDOG_PROGRESS_THERMAL   = (1UL << 8)
 } watchdog_progress_mask_t;
 
 typedef enum

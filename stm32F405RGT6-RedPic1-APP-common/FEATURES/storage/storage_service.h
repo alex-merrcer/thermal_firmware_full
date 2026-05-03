@@ -26,6 +26,9 @@ typedef struct
 void storage_service_init(void);
 uint8_t storage_service_mount(void);
 uint8_t storage_service_is_mounted(void);
+void storage_service_prepare_for_stop(void);
+void storage_service_prepare_for_standby(void);
+void storage_service_invalidate_session_after_stop(void);
 storage_status_t storage_service_get_info(storage_info_t *info);
 storage_status_t storage_service_query_capacity(storage_info_t *info);
 storage_status_t storage_service_ensure_redpic_dirs(void);

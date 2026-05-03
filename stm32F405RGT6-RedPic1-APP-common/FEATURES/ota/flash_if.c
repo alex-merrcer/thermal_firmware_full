@@ -95,7 +95,7 @@ static uint32_t GetSector(uint32_t Address)
     }
     else
     {
-        sector = FLASH_Sector_11;
+        sector = 0xFFFFFFFFU;
     }
 
     return sector;

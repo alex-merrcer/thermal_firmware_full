@@ -2,6 +2,9 @@
 #include "delay.h"
 #include "lcd_dma.h"
 
+/* C6 修复：SPI 忙等超时计数器（168MHz CPU 约 3ms 超时） */
+#define LCD_SPI_TIMEOUT_LOOPS  500000UL
+
 static uint8_t s_lcd_sleeping = 0U;
 
 static void lcd_spi_gpio_apply(uint8_t keep_backlight_on)
@@ -82,16 +85,22 @@ void LCD_GPIO_Init(void)
 
 void LCD_Writ_Bus(u8 dat)
 {
+    uint32_t timeout;
+
     LCD_CS_Clr();
 
+    timeout = LCD_SPI_TIMEOUT_LOOPS;
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET)
     {
+        if (--timeout == 0U) { LCD_CS_Set(); return; }
     }
 
     SPI_I2S_SendData(SPI1, dat);
 
+    timeout = LCD_SPI_TIMEOUT_LOOPS;
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET)
     {
+        if (--timeout == 0U) { break; }
     }
 
     LCD_CS_Set();
@@ -105,21 +114,29 @@ void LCD_WR_DATA8(u8 dat)
 
 void LCD_WR_DATA(u16 dat)
 {
+    uint32_t timeout;
+
     LCD_DC_Set();
     LCD_CS_Clr();
 
+    timeout = LCD_SPI_TIMEOUT_LOOPS;
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET)
     {
+        if (--timeout == 0U) { LCD_CS_Set(); return; }
     }
     SPI_I2S_SendData(SPI1, (dat >> 8) & 0xFF);
 
+    timeout = LCD_SPI_TIMEOUT_LOOPS;
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET)
     {
+        if (--timeout == 0U) { LCD_CS_Set(); return; }
     }
     SPI_I2S_SendData(SPI1, dat & 0xFF);
 
+    timeout = LCD_SPI_TIMEOUT_LOOPS;
     while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET)
     {
+        if (--timeout == 0U) { break; }
     }
     LCD_CS_Set();
 }

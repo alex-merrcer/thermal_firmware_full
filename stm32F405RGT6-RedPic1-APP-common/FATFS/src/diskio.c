@@ -52,6 +52,20 @@ DSTATUS disk_status (
 	return s_disk_status;
 }
 
+DSTATUS disk_deinitialize (
+	BYTE pdrv		/* Physical drive nmuber (0..) */
+)
+{
+    if (pdrv != SD_CARD)
+    {
+        return STA_NOINIT;
+    }
+
+    (void)SD_EnterLowPowerMode();
+    s_disk_status = STA_NOINIT;
+    return s_disk_status;
+}
+
 DRESULT disk_read (
 	BYTE pdrv,		/* Physical drive nmuber (0..) */
 	BYTE *buff,		/* Data buffer to store read data */

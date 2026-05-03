@@ -36,11 +36,15 @@ void Adc_Init(void)
 
 u16 Get_Adc(u8 ch)
 {
+    uint32_t timeout;
+
     ADC_RegularChannelConfig(ADC1, ch, 1, ADC_SampleTime_480Cycles);
     ADC_SoftwareStartConv(ADC1);
 
+    timeout = 500000UL;
     while (ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC) == RESET)
     {
+        if (--timeout == 0U) { return 0U; }
     }
 
     return ADC_GetConversionValue(ADC1);
