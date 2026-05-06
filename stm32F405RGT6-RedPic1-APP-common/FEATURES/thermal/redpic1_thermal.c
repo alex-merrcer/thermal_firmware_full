@@ -1185,8 +1185,7 @@ void redpic1_thermal_step(void)
     /* 模块未使能：直接返回 */
     if (s_runEnabled == 0U)
     {
-        app_perf_baseline_record_thermal_step_us(
-            app_perf_baseline_elapsed_us(step_start_cycle));
+        app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
         return;
     }
 
@@ -1232,8 +1231,7 @@ void redpic1_thermal_step(void)
         /* 步骤 1：退避判定 */
         if (redpic1_thermal_capture_prepare_step() == 0U)
         {
-            app_perf_baseline_record_thermal_step_us(
-                app_perf_baseline_elapsed_us(step_start_cycle));
+            app_perf_baseline_record_thermal_step_us(app_perf_baseline_elapsed_us(step_start_cycle));
             return;
         }
 

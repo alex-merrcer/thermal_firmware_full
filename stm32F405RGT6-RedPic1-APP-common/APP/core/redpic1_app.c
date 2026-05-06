@@ -1009,9 +1009,7 @@ static void input_task(void *pvParameters)
     while (1)
     {
         /* KEY2 挂起态使用短超时轮询，否则阻塞等待中断通知 */
-        wait_ticks = (s_input_state.key2_pending != 0U)
-                         ? pdMS_TO_TICKS(APP_INPUT_LOOP_MS)
-                         : portMAX_DELAY;
+        wait_ticks = (s_input_state.key2_pending != 0U)? pdMS_TO_TICKS(APP_INPUT_LOOP_MS): portMAX_DELAY;
         (void)ulTaskNotifyTake(pdTRUE, wait_ticks);
 
         /* 消费所有待处理按键事件 */
@@ -1273,9 +1271,7 @@ static void thermal_task(void *pvParameters)
 
     while (1)
     {
-        event_bits = (s_runtime_events != 0)
-                         ? xEventGroupGetBits(s_runtime_events)
-                         : 0U;
+        event_bits = (s_runtime_events != 0)? xEventGroupGetBits(s_runtime_events): 0U;
 
         if ((event_bits & APP_EG_BIT_THERMAL_ACTIVE) != 0U)
         {

@@ -61,6 +61,7 @@
 
 /** 同步命令等待超时（ms） */
 #define APP_DISPLAY_SYNC_TIMEOUT_MS    1000UL
+#define APP_DISPLAY_WATCHDOG_HEARTBEAT_MS 100UL
 
 /* =========================================================================
  *  3. 内部类型定义
@@ -654,7 +655,8 @@ void app_display_runtime_task(void *pvParameters)
         app_display_runtime_req_t req;
 
         /* 阻塞等待 QueueSet 中任意成员有数据 */
-        activated = xQueueSelectFromSet(s_display_event_set, portMAX_DELAY);
+        activated = xQueueSelectFromSet(s_display_event_set,
+                                        pdMS_TO_TICKS(APP_DISPLAY_WATCHDOG_HEARTBEAT_MS));
 
         /* 热成像信号量激活时清除信号 */
         if (activated == s_display_thermal_sem)
